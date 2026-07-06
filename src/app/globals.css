@@ -1,27 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Curator-designed dark navy / teal color palette (Trust-building) */
+  --bg-main: #070d19;
+  --bg-gradient-start: #0a1428;
+  --bg-gradient-end: #050a12;
+  
+  --foreground: #f8fafc;
+  
+  --glass-bg: rgba(13, 27, 49, 0.45);
+  --glass-border: rgba(30, 58, 102, 0.4);
+  --glass-border-hover: rgba(56, 189, 248, 0.4);
+  
+  --accent-primary: #14b8a6; /* Teal */
+  --accent-secondary: #0ea5e9; /* Sky Blue */
+  --accent-success: #10b981; /* Emerald */
+  --accent-warning: #f59e0b; /* Amber */
+  --accent-danger: #ef4444; /* Rose Red */
+  
+  --text-muted: #94a3b8;
 }
 
 body {
   color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-main);
+  background-image: radial-gradient(circle at 10% 20%, rgba(13, 27, 49, 0.8) 0%, rgba(5, 10, 18, 0.95) 100%);
+  background-attachment: fixed;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+/* Glassmorphism custom classes */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  border-color: var(--glass-border-hover);
+  box-shadow: 0 8px 32px 0 rgba(56, 189, 248, 0.15);
+  transform: translateY(-2px);
+}
+
+.glass-input {
+  background: rgba(13, 27, 49, 0.3);
+  border: 1px solid var(--glass-border);
+  color: var(--foreground);
+  transition: all 0.2s ease-in-out;
+}
+
+.glass-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.2);
+  outline: none;
+  background: rgba(13, 27, 49, 0.5);
+}
+
+.glass-button-primary {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  color: #ffffff;
+  font-weight: 600;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 4px 15px 0 rgba(20, 184, 166, 0.3);
+}
+
+.glass-button-primary:hover {
+  opacity: 0.95;
+  box-shadow: 0 4px 20px 0 rgba(20, 184, 166, 0.5);
+  transform: translateY(-1px);
+}
+
+.glass-button-primary:active {
+  transform: translateY(0);
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(5, 10, 18, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--glass-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-secondary);
+}
+
+/* Animations */
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 0.6;
   }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
