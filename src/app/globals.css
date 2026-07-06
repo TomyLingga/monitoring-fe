@@ -25,14 +25,36 @@
   --text-muted: #94a3b8;
 }
 
+:root.light {
+  /* Premium light mode color palette */
+  --bg-main: #f8fafc; /* Slate 50 */
+  --bg-gradient-start: #ffffff;
+  --bg-gradient-end: #e2e8f0; /* Slate 200 */
+  
+  --foreground: #0f172a; /* Slate 900 */
+  
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(148, 163, 184, 0.35);
+  --glass-border-hover: rgba(20, 184, 166, 0.5);
+  
+  --accent-primary: #0d9488; /* Teal 600 */
+  --accent-secondary: #0284c7; /* Sky 600 */
+  --accent-success: #059669; /* Emerald 600 */
+  --accent-warning: #d97706; /* Amber 600 */
+  --accent-danger: #e11d48; /* Rose 600 */
+  
+  --text-muted: #64748b; /* Slate 500 */
+}
+
 body {
   color: var(--foreground);
   background-color: var(--bg-main);
-  background-image: radial-gradient(circle at 10% 20%, rgba(13, 27, 49, 0.8) 0%, rgba(5, 10, 18, 0.95) 100%);
+  background-image: radial-gradient(circle at 10% 20%, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
   background-attachment: fixed;
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color 0.3s, color 0.3s, background-image 0.3s;
 }
 
 /* Glassmorphism custom classes */
@@ -81,6 +103,147 @@ body {
 
 .glass-button-primary:active {
   transform: translateY(0);
+}
+
+/* Light Mode Overrides for Slate Utilities */
+:root.light .glass-card {
+  box-shadow: 0 10px 25px 0 rgba(148, 163, 184, 0.12);
+}
+
+:root.light .text-white {
+  color: #0f172a !important; /* Slate 900 */
+}
+
+:root.light .text-slate-400 {
+  color: #475569 !important; /* Slate 600 */
+}
+
+:root.light .text-slate-350 {
+  color: #334155 !important; /* Slate 700 */
+}
+
+:root.light .text-slate-450 {
+  color: #475569 !important; /* Slate 600 */
+}
+
+:root.light .text-slate-300 {
+  color: #1e293b !important; /* Slate 800 */
+}
+
+:root.light .text-slate-500 {
+  color: #64748b !important; /* Slate 500 */
+}
+
+:root.light .bg-slate-900 {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+:root.light .bg-slate-900\/80 {
+  background-color: rgba(241, 245, 249, 0.8) !important;
+}
+
+:root.light .bg-slate-900\/60 {
+  background-color: rgba(241, 245, 249, 0.6) !important;
+}
+
+:root.light .bg-slate-900\/40 {
+  background-color: rgba(241, 245, 249, 0.4) !important;
+}
+
+:root.light .bg-slate-950 {
+  background-color: #e2e8f0 !important;
+}
+
+:root.light .bg-slate-950\/85 {
+  background-color: rgba(226, 232, 240, 0.85) !important;
+}
+
+:root.light .bg-slate-950\/80 {
+  background-color: rgba(226, 232, 240, 0.8) !important;
+}
+
+:root.light .bg-slate-950\/40 {
+  background-color: rgba(248, 250, 252, 0.85) !important;
+}
+
+:root.light .bg-slate-950\/20 {
+  background-color: rgba(248, 250, 252, 0.55) !important;
+}
+
+:root.light .bg-[#0b1329]\/95 {
+  background-color: rgba(241, 245, 249, 0.95) !important;
+}
+
+:root.light input[type="date"],
+:root.light input[type="text"],
+:root.light input[type="tel"],
+:root.light input[type="search"],
+:root.light input[type="email"],
+:root.light select,
+:root.light textarea {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+
+:root.light input[type="date"] {
+  background-color: #ffffff !important;
+}
+
+:root.light .text-slate-400,
+:root.light .text-slate-450,
+:root.light .text-slate-500,
+:root.light .text-slate-300,
+:root.light .text-slate-350,
+:root.light .text-slate-200,
+:root.light .text-slate-100 {
+  color: #475569 !important;
+}
+
+:root.light .bg-slate-900\/60 {
+  background-color: rgba(241, 245, 249, 0.6) !important;
+}
+
+:root.light .bg-slate-900\/50 {
+  background-color: rgba(241, 245, 249, 0.5) !important;
+}
+
+:root.light .bg-slate-950\/30 {
+  background-color: rgba(226, 232, 240, 0.3) !important;
+}
+
+:root.light .bg-slate-950\/60 {
+  background-color: rgba(226, 232, 240, 0.6) !important;
+}
+
+:root.light .border-slate-800 {
+  border-color: #cbd5e1 !important;
+}
+
+:root.light .border-slate-850 {
+  border-color: #cbd5e1 !important;
+}
+
+:root.light .border-slate-900 {
+  border-color: #cbd5e1 !important;
+}
+
+:root.light .border-slate-900\/60 {
+  border-color: rgba(203, 213, 225, 0.6) !important;
+}
+
+:root.light .divide-slate-800\/60 > * + * {
+  border-color: rgba(203, 213, 225, 0.6) !important;
+}
+
+:root.light input.glass-input, :root.light select.glass-input {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+:root.light .hover\:bg-slate-900\/40:hover {
+  background-color: rgba(203, 213, 225, 0.25) !important;
 }
 
 /* Scrollbar styles */
