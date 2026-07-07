@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import GlassCard from '../GlassCard';
-import { Search, UserPlus, FileText, Trash2, Edit, Download, Upload, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Search, UserPlus, User, FileText, Trash2, Edit, Download, Upload, CheckCircle, AlertTriangle, X } from 'lucide-react';
 
 export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -9,13 +9,8 @@ export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
   const [editingBuyer, setEditingBuyer] = useState(null);
   
   // Form State
-  const [formData, setFormData] = useState({
-    nama: '',
-    alamat: '',
-    pic: '',
-    telepon: '',
-    email: '',
-  });
+  const [nama, setNama] = useState('');
+  const [keterangan, setKeterangan] = useState('lokal');
 
   const [toast, setToast] = useState(null);
 
@@ -26,27 +21,23 @@ export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
 
   const handleEditClick = (buyer) => {
     setEditingBuyer(buyer);
-    setFormData({
-      nama: buyer.nama ?? '',
-      alamat: buyer.alamat ?? '',
-      pic: buyer.pic ?? '',
-      telepon: buyer.telepon ?? '',
-      email: buyer.email ?? '',
-    });
+    setNama(buyer.nama || '');
+    setKeterangan(buyer.keterangan || 'lokal');
     setShowForm(true);
   };
 
   const handleCloseForm = () => {
     setShowForm(false);
     setEditingBuyer(null);
-    setFormData({ nama: '', alamat: '', pic: '', telepon: '', email: '' });
+    setNama('');
+    setKeterangan('lokal');
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.nama) return;
+    if (!nama) return;
 
-    const normalizedNama = formData.nama.trim().toLowerCase();
+    const normalizedNama = nama.trim().toLowerCase();
     const isDuplicate = buyers.some(b => b.nama.trim().toLowerCase() === normalizedNama && b.id !== editingBuyer?.id);
     
     if (isDuplicate) {
@@ -54,26 +45,27 @@ export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
       return;
     }
 
+    const payload = { nama, keterangan };
     if (editingBuyer) {
-      onUpdate(editingBuyer.id, formData);
+      onUpdate(editingBuyer.id, payload);
       showToast('Buyer berhasil diperbarui', 'success');
     } else {
-      onAdd(formData);
+      onAdd(payload);
       showToast('Buyer berhasil ditambahkan', 'success');
     }
     handleCloseForm();
   };
 
   const filteredBuyers = buyers.filter(b => 
-    b.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (b.pic && b.pic.toLowerCase().includes(searchTerm.toLowerCase()))
+    b.nama.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const downloadTemplate = () => {
     const wsData = [
-      ['nama', 'alamat', 'pic', 'telepon', 'email'],
-      ['PT Salim Ivomas Pratama', 'Jl. Sudirman Kav 34, Jakarta', 'Ahmad Subagyo', '021-579588', 'sales@salimivomas.com'],
-      ['PT Wings Surya', 'Jl. Kalibutuh 189, Surabaya', 'Hendra Wijaya', '031-5322300', 'hendra.wings@wingscorp.com']
+      ['nama', 'keterangan'],
+      ['PT Salim Ivomas Pratama', 'lokal'],
+      ['PT Wings Surya', 'lokal'],
+      ['PT Unilever Indonesia Tbk', 'ekspor']
     ];
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
@@ -109,10 +101,7 @@ export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
           } else {
             onAdd({
               nama: rawName.trim(),
-              alamat: row.alamat ? String(row.alamat).trim() : null,
-              pic: row.pic ? String(row.pic).trim() : null,
-              telepon: row.telepon ? String(row.telepon).trim() : null,
-              email: row.email ? String(row.email).trim() : null,
+              keterangan: row.keterangan ? String(row.keterangan).trim().toLowerCase() : 'lokal',
             });
             successCount++;
           }
@@ -158,7 +147,7 @@ export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Cari nama buyer atau PIC..."
+              placeholder="Cari nama buyer..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl glass-input text-sm"
@@ -194,151 +183,118 @@ export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
 
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl glass-button-primary text-xs font-bold"
+          className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl glass-button-primary text-sm font-bold self-start md:self-auto"
         >
           <UserPlus className="h-4 w-4" />
           <span>Tambah Buyer / Customer</span>
         </button>
       </div>
 
-      {/* Main Form Overlay */}
-      {showForm && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9990]">
-          <GlassCard className="w-full max-w-md border-teal-500/20" hover={false}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">
-                {editingBuyer ? 'Edit Buyer / Customer' : 'Tambah Buyer Baru'}
-              </h3>
-              <button onClick={handleCloseForm} className="text-slate-400 hover:text-white">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+        {/* Form Panel */}
+        {showForm && (
+          <GlassCard className="xl:col-span-1 border-teal-500/30">
+            <h3 className="text-lg font-bold text-white mb-6">
+              {editingBuyer ? 'Edit Buyer / Customer' : 'Tambah Buyer Baru'}
+            </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nama Perusahaan / Buyer</label>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Nama Buyer / Perusahaan *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: PT Salim Ivomas Pratama"
-                  value={formData.nama}
-                  onChange={e => setFormData(prev => ({ ...prev, nama: e.target.value }))}
-                  className="w-full px-4.5 py-2.5 rounded-xl glass-input text-xs"
+                  placeholder="PT Salim Ivomas Pratama"
+                  value={nama}
+                  onChange={(e) => setNama(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl glass-input text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Alamat Kantor / Pabrik</label>
-                <textarea
-                  placeholder="Contoh: Jl. Sudirman Kav 34, Jakarta"
-                  rows={2}
-                  value={formData.alamat}
-                  onChange={e => setFormData(prev => ({ ...prev, alamat: e.target.value }))}
-                  className="w-full px-4.5 py-2.5 rounded-xl glass-input text-xs"
-                />
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Keterangan / Segmen *</label>
+                <select
+                  value={keterangan}
+                  onChange={(e) => setKeterangan(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl glass-input text-sm bg-slate-900 text-white"
+                >
+                  <option value="lokal">Lokal</option>
+                  <option value="ekspor">Ekspor</option>
+                </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">PIC / Contact Person</label>
-                  <input
-                    type="text"
-                    placeholder="Nama PIC"
-                    value={formData.pic}
-                    onChange={e => setFormData(prev => ({ ...prev, pic: e.target.value }))}
-                    className="w-full px-4.5 py-2.5 rounded-xl glass-input text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">No. Telepon</label>
-                  <input
-                    type="text"
-                    placeholder="No. Telp"
-                    value={formData.telepon}
-                    onChange={e => setFormData(prev => ({ ...prev, telepon: e.target.value }))}
-                    className="w-full px-4.5 py-2.5 rounded-xl glass-input text-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Email Kantor</label>
-                <input
-                  type="email"
-                  placeholder="Contoh: info@company.com"
-                  value={formData.email}
-                  onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full px-4.5 py-2.5 rounded-xl glass-input text-xs"
-                />
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <button type="submit" className="flex-1 py-3 rounded-xl glass-button-primary text-xs font-bold">
-                  {editingBuyer ? 'Simpan Perubahan' : 'Tambahkan'}
+              <div className="flex space-x-3 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl glass-button-primary text-sm font-semibold"
+                >
+                  Simpan
                 </button>
-                <button type="button" onClick={handleCloseForm} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold hover:text-white transition-colors">
+                <button
+                  type="button"
+                  onClick={handleCloseForm}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-sm font-semibold"
+                >
                   Batal
                 </button>
               </div>
             </form>
           </GlassCard>
-        </div>
-      )}
+        )}
 
-      {/* Main List */}
-      <GlassCard className="overflow-hidden" hover={false}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
-                <th className="py-3 px-4">Nama Buyer</th>
-                <th className="py-3 px-4">Alamat</th>
-                <th className="py-3 px-4">PIC</th>
-                <th className="py-3 px-4">Telepon</th>
-                <th className="py-3 px-4">Email</th>
-                <th className="py-3 px-4 text-center">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {filteredBuyers.map((b) => (
-                <tr key={b.id} className="hover:bg-slate-900/40 transition-colors align-middle">
-                  <td className="py-3 px-4 font-bold text-white flex items-center space-x-2">
-                    <span className="h-6 w-6 rounded bg-teal-500/10 text-teal-400 flex items-center justify-center font-bold text-xs uppercase">{b.nama[0]}</span>
-                    <span>{b.nama}</span>
-                  </td>
-                  <td className="py-3 px-4 text-slate-400 font-semibold">{b.alamat ?? '-'}</td>
-                  <td className="py-3 px-4 text-slate-300">{b.pic ?? '-'}</td>
-                  <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">{b.telepon ?? '-'}</td>
-                  <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">{b.email ?? '-'}</td>
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center space-x-1.5">
-                      <button 
-                        onClick={() => handleEditClick(b)}
-                        className="p-1 rounded bg-slate-900 text-slate-400 hover:text-teal-400 border border-slate-800 transition-colors"
-                        title="Edit Buyer"
-                      >
-                        <Edit className="h-3.5 w-3.5" />
-                      </button>
-                      <button 
-                        onClick={() => onDelete(b.id)}
-                        className="p-1 rounded bg-slate-900 text-slate-400 hover:text-red-400 border border-slate-800 transition-colors"
-                        title="Hapus Buyer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+        {/* Buyers List */}
+        <div className={showForm ? 'xl:col-span-2 space-y-4' : 'xl:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5'}>
+          {filteredBuyers.map((buyer) => (
+            <GlassCard key={buyer.id} className="relative flex flex-col justify-between space-y-4">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center space-x-3">
+                  <div className="h-10 w-10 rounded-xl bg-teal-500/10 flex items-center justify-center border border-teal-500/30">
+                    <User className="h-5 w-5 text-teal-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-sm">{buyer.nama}</h4>
+                    <div className="flex items-center space-x-1.5 mt-0.5">
+                      <p className="text-[10px] text-slate-500">Buyer ID: #{buyer.id}</p>
+                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
+                        buyer.keterangan === 'ekspor' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
+                      }`}>{buyer.keterangan || 'lokal'}</span>
                     </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredBuyers.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-500 italic">Tidak ada buyer ditemukan</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+                <div className="flex space-x-1.5">
+                  <button
+                    onClick={() => handleEditClick(buyer)}
+                    className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-teal-400 transition-colors"
+                  >
+                    <Edit className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDelete(buyer.id)}
+                    className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-red-950/40 border border-slate-800 hover:border-red-900 text-slate-400 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Status summary */}
+              <div className="flex items-center justify-between text-xs bg-slate-950/50 p-2.5 rounded-lg border border-slate-900 mt-2">
+                <div className="flex items-center space-x-1.5">
+                  <FileText className="h-4 w-4 text-teal-400" />
+                  <span className="text-slate-400">Total Kontrak Penjualan</span>
+                </div>
+                <strong className="text-white">{buyer.kontrak_penjualans_count || 0}</strong>
+              </div>
+            </GlassCard>
+          ))}
+
+          {filteredBuyers.length === 0 && (
+            <div className="col-span-full py-12 text-center text-slate-500 font-semibold glass-card rounded-2xl border border-slate-800">
+              Tidak ada buyer ditemukan.
+            </div>
+          )}
         </div>
-      </GlassCard>
+      </div>
     </div>
   );
 }

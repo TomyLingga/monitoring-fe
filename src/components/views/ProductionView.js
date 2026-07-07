@@ -4,8 +4,9 @@ import * as XLSX from 'xlsx';
 import {
   FlaskConical, Layers, Package, Calendar, Plus, Edit, Trash2,
   ChevronLeft, ChevronRight, X, CheckCircle, AlertTriangle,
-  Target, ArrowRight, ArrowLeft, Download, Upload
+  Target, ArrowRight, ArrowLeft, Download, Upload, BarChart2
 } from 'lucide-react';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid } from 'recharts';
 
 export default function ProductionView({
   products,
@@ -128,6 +129,43 @@ export default function ProductionView({
   }, [activeTab, totalHasilRefinery, totalHasilFraksinasi, totalHasilPackaging]);
 
   const pctTarget = totalTargetRange > 0 ? Math.min(100, Math.round((totalHasilActive / totalTargetRange) * 100)) : 0;
+
+  // ── Chart Data: Daily target vs realisasi ──
+  const dailyChartData = useMemo(() => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const dateMap = {};
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const ds = d.toISOString().split('T')[0];
+      const label = ds.slice(5); // MM-DD
+      dateMap[ds] = { date: ds, label, target: 0, realisasi: 0 };
+    }
+
+    // Fill targets for activeTab
+    (dailyProductionTargets || []).filter(t => t.jenis === activeTab).forEach(t => {
+      const ds = t.tgl?.split('T')[0] || t.tgl;
+      if (dateMap[ds]) dateMap[ds].target += parseFloat(t.target_qty || 0);
+    });
+
+    // Fill realisasi from hasil per process
+    const sourceData = activeTab === 'refinery' ? prosesRefineries
+      : activeTab === 'fraksinasi' ? prosesFraksinasis : prosesPackagings;
+
+    const hasilKey = activeTab === 'refinery' ? ['hasil_refineries', 'hasilRefineries']
+      : activeTab === 'fraksinasi' ? ['hasil_fraksinasis', 'hasilFraksinasis']
+      : ['hasil_packagings', 'hasilPackagings'];
+
+    sourceData.forEach(p => {
+      const ds = p.tgl?.split('T')[0] || p.tgl;
+      if (dateMap[ds]) {
+        const items = p[hasilKey[0]] ?? p[hasilKey[1]] ?? [];
+        dateMap[ds].realisasi += items.reduce((s, h) => s + parseFloat(h.qty || 0), 0);
+      }
+    });
+
+    return Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
+  }, [startDate, endDate, activeTab, dailyProductionTargets, prosesRefineries, prosesFraksinasis, prosesPackagings]);
 
   // ── Open modal helpers ──
   const openAddModal = (type) => {
@@ -639,6 +677,46 @@ export default function ProductionView({
             </div>
           </div>
         </div>
+      </GlassCard>
+
+      {/* ── 3b. Chart Target vs Realisasi ── */}
+      <GlassCard hover={false}>
+        <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-900">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/20">
+              <BarChart2 className="h-5 w-5 text-sky-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-white uppercase tracking-wider">Chart Target vs Realisasi — {activeTab.toUpperCase()}</h3>
+              <p className="text-xs text-slate-400">Perbandingan target harian dengan realisasi output produksi dalam rentang periode</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3 text-xs">
+            <span className="flex items-center space-x-1"><span className="inline-block w-3 h-3 rounded-sm bg-rose-500/80"></span><span className="text-slate-400">Target</span></span>
+            <span className="flex items-center space-x-1"><span className="inline-block w-3 h-3 rounded-sm bg-teal-500/80"></span><span className="text-slate-400">Realisasi</span></span>
+          </div>
+        </div>
+        {dailyChartData.length === 0 ? (
+          <div className="h-48 flex items-center justify-center text-slate-500 italic text-xs">Tidak ada data dalam periode ini</div>
+        ) : (
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dailyChartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }} barCategoryGap="30%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="label" stroke="#475569" fontSize={11} tickMargin={6} />
+                <YAxis stroke="#475569" fontSize={11} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} width={45} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: 'rgba(15,23,42,0.95)', borderColor: '#334155', borderRadius: '10px', fontSize: '11px' }}
+                  itemStyle={{ color: '#e2e8f0' }}
+                  labelStyle={{ color: '#94a3b8', fontWeight: 700 }}
+                  formatter={(value, name) => [value.toLocaleString('id-ID'), name]}
+                />
+                <Bar dataKey="target" name={`Target (${activeUnit})`} fill="#f43f5e" opacity={0.75} radius={[3,3,0,0]} />
+                <Bar dataKey="realisasi" name={`Realisasi (${activeUnit})`} fill="#14b8a6" opacity={0.85} radius={[3,3,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </GlassCard>
 
       {/* ── 4. Table Card (Mengikuti activeTab) ── */}

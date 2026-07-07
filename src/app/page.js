@@ -50,6 +50,11 @@ export default function Home() {
   const [kontrakPenjualans, setKontrakPenjualans] = useState([]);
   const [pengirimanPenjualans, setPengirimanPenjualans] = useState([]);
   const [pembayaranPenjualans, setPembayaranPenjualans] = useState([]);
+  const [dailySalesTargets, setDailySalesTargets] = useState([]);
+
+  // Sales Date Filter State
+  const [salesStartDate, setSalesStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; });
+  const [salesEndDate, setSalesEndDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Production State
   const [prodStartDate, setProdStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; });
@@ -88,7 +93,7 @@ export default function Home() {
     try {
       const [
         dash, sups, stores, prods, ctrs, targets, prodStocks,
-        custs, sCtrs, sShips, sPays
+        custs, sCtrs, sShips, sPays, sTargets
       ] = await Promise.all([
         apiCall(`/dashboard?start_date=${start}&end_date=${end}`),
         apiCall('/suppliers'),
@@ -99,8 +104,9 @@ export default function Home() {
         apiCall('/stok-produks'),
         apiCall('/buyers'),
         apiCall('/kontrak-penjualans'),
-        apiCall('/pengiriman-penjualans'),
+        apiCall(`/pengiriman-penjualans?start_date=${salesStartDate}&end_date=${salesEndDate}`),
         apiCall('/pembayaran-penjualans'),
+        apiCall(`/daily-sales-targets?start_date=${salesStartDate}&end_date=${salesEndDate}`)
       ]);
 
       // Align state
@@ -108,6 +114,7 @@ export default function Home() {
       setProducts(prods);
       setContracts(ctrs);
       setDailyTargets(Array.isArray(targets) ? targets : []);
+      setDailySalesTargets(Array.isArray(sTargets) ? sTargets : []);
       setStocks(Array.isArray(prodStocks) ? prodStocks : []);
       setBuyers(Array.isArray(custs) ? custs : []);
       setKontrakPenjualans(Array.isArray(sCtrs) ? sCtrs : []);
@@ -162,7 +169,7 @@ export default function Home() {
     if (user) {
       fetchAllData(startDate, endDate);
     }
-  }, [user, fetchAllData, startDate, endDate]);
+  }, [user, fetchAllData, startDate, endDate, salesStartDate, salesEndDate]);
 
   // Recalculates metrics in local React state so that CRUD modifications are immediately visible.
   const recalculateLocalState = useCallback((updatedContracts, updatedIncoming, updatedStorages) => {
@@ -928,7 +935,15 @@ export default function Home() {
                 storages={storages}
                 shipments={pengirimanPenjualans}
                 payments={pembayaranPenjualans}
+                dailyTargets={dailySalesTargets}
+                startDate={salesStartDate}
+                endDate={salesEndDate}
+                setStartDate={setSalesStartDate}
+                setEndDate={setSalesEndDate}
                 theme={theme}
+                onAddSalesTarget={async (p) => { const r = await apiCall('/daily-sales-targets', { method: 'POST', body: JSON.stringify(p) }); setDailySalesTargets(prev => [r, ...prev.filter(x => x.tgl !== p.tgl)]); await fetchAllData(); }}
+                onUpdateSalesTarget={async (id, p) => { const r = await apiCall(`/daily-sales-targets/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setDailySalesTargets(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeleteSalesTarget={async (id) => { await apiCall(`/daily-sales-targets/${id}`, { method: 'DELETE' }); setDailySalesTargets(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
                 onAddContract={async (p) => { const r = await apiCall('/kontrak-penjualans', { method: 'POST', body: JSON.stringify(p) }); setKontrakPenjualans(prev => [r, ...prev]); await fetchAllData(); }}
                 onUpdateContract={async (id, p) => { const r = await apiCall(`/kontrak-penjualans/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setKontrakPenjualans(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
                 onDeleteContract={async (id) => { await apiCall(`/kontrak-penjualans/${id}`, { method: 'DELETE' }); setKontrakPenjualans(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}

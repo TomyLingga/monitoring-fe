@@ -361,7 +361,7 @@ export default function StokView({
                       style={{ height: `${pct}%` }}
                     />
                     <div className="absolute inset-0 flex items-center justify-center flex-col z-10 select-none">
-                      <span className="text-[10px] font-black drop-shadow-md" style={{ color: theme === 'light' ? '#0f172a' : '#ffffff' }}>{pct}%</span>
+                      <span className="text-[10px] font-black drop-shadow-md text-white">{pct}%</span>
                     </div>
                   </div>
                 ) : (
@@ -384,7 +384,7 @@ export default function StokView({
                       );
                     })}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="bg-slate-950/85 border border-slate-800 px-1.5 py-0.5 rounded text-[9px] font-black drop-shadow-md" style={{ color: theme === 'light' ? '#0f172a' : '#ffffff' }}>
+                      <span className="bg-slate-950/85 border border-slate-800 px-1.5 py-0.5 rounded text-[9px] font-black drop-shadow-md text-white">
                         {pct}%
                       </span>
                     </div>
@@ -392,7 +392,7 @@ export default function StokView({
                 )}
 
                 <div className="space-y-0.5">
-                  <p className="text-[11px] font-black text-white leading-none">{curStokQty.toLocaleString('id-ID', { maximumFractionDigits: 0 })} <span className="text-[9px] font-normal text-slate-500 dark:text-slate-400">{unit}</span></p>
+                  <p className="text-[11px] font-black text-slate-900 dark:text-white leading-none">{curStokQty.toLocaleString('id-ID', { maximumFractionDigits: 0 })} <span className="text-[9px] font-normal text-slate-500 dark:text-slate-400">{unit}</span></p>
                   <p className="text-[8px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Kapasitas: {maxCap.toLocaleString('id-ID')} {unit}</p>
                 </div>
               </div>
@@ -401,72 +401,56 @@ export default function StokView({
         </div>
       </GlassCard>
 
-      {/* ── 3. Table Log & Filter Bar ── */}
-      <GlassCard hover={false}>
-        {/* Table Toolbar */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between pb-5 mb-5 border-b border-slate-900 gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center space-x-2 bg-slate-950/40 border border-slate-900 rounded-xl px-3 py-2 w-64">
-              <Boxes className="h-4 w-4 text-teal-400 shrink-0" />
-              <input 
-                type="text" 
-                placeholder="Cari nama/kode produk..." 
-                value={searchQuery}
-                onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                className="bg-transparent border-0 text-xs text-white focus:ring-0 outline-none flex-1 font-sans" 
-              />
-              {searchQuery && <button onClick={() => setSearchQuery('')} className="text-slate-500 hover:text-white text-xs">Clear</button>}
+      {/* ── 3. Tabel Detail Stok ── */}
+      <GlassCard className="mt-6" hover={false}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 space-y-4 md:space-y-0 border-b border-slate-900/60 pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+              <LayoutGrid className="h-5 w-5 text-indigo-400" />
             </div>
-
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">Detail Stok per Lokasi</h3>
+              <p className="text-xs text-slate-400">Rincian kuantitas produk berdasarkan storage</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center space-x-2">
             <select 
               value={filterStorage} 
               onChange={e => { setFilterStorage(e.target.value); setCurrentPage(1); }}
-              className="px-3 py-2.5 rounded-xl bg-slate-950/40 border border-slate-900 text-xs text-white focus:ring-0 outline-none"
+              className="px-4 py-2.5 rounded-xl glass-input text-xs"
             >
               <option value="">Semua Penyimpanan</option>
               {storages.map(s => <option key={s.id} value={s.id}>{s.nama} ({s.jenis.toUpperCase()})</option>)}
             </select>
-          </div>
-
-          <div className="flex items-center space-x-2.5">
-            <button
-              onClick={downloadTemplate}
-              className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-350 hover:text-white transition-all text-xs font-bold"
-            >
-              <Download className="h-4 w-4 text-teal-400" />
-              <span>Unduh Template</span>
-            </button>
-
-            <label className="flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-350 hover:text-white transition-all text-xs font-bold cursor-pointer">
-              <Upload className="h-4 w-4 text-teal-400" />
-              <span>Impor Excel</span>
-              <input
-                type="file"
-                onChange={handleImport}
-                className="hidden"
-                accept=".xlsx,.xls,.csv"
-              />
-            </label>
-
-            <button
-              onClick={openAddModal}
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl glass-button-primary text-xs font-bold"
-            >
+            <input 
+              type="text" 
+              placeholder="Cari produk atau storage..."
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              className="px-4 py-2.5 rounded-xl glass-input text-xs w-64"
+            />
+            <button onClick={openAddModal} className="flex items-center space-x-2 px-4 py-2.5 rounded-xl glass-button-primary text-xs font-bold">
               <Plus className="h-4 w-4" />
-              <span>Tambah Stok Baru</span>
+              <span>Tambah Stok</span>
             </button>
+            <div className="relative">
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+              <button className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors text-xs font-bold">
+                <Upload className="h-4 w-4" />
+                <span>Import Excel</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Table Content */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-900/50 text-slate-400 font-bold uppercase tracking-wider">
+              <tr>
                 <th className="py-3 px-4">Nama Produk / Material</th>
-                <th className="py-3 px-4">Kode</th>
-                <th className="py-3 px-4">Penyimpanan / Tangki / Gudang</th>
-                <th className="py-3 px-4 text-right">Kuantitas Stok</th>
+                <th className="py-3 px-4">Kode Produk</th>
+                <th className="py-3 px-4">Lokasi (Storage)</th>
+                <th className="py-3 px-4 text-right">Kuantitas</th>
                 <th className="py-3 px-4">Satuan</th>
                 <th className="py-3 px-4">Terakhir Diupdate</th>
                 <th className="py-3 px-4 text-center">Aksi</th>
@@ -475,12 +459,12 @@ export default function StokView({
             <tbody className="divide-y divide-slate-800/60">
               {paginatedStocks.map(item => (
                 <tr key={item.id} className="hover:bg-slate-900/40 transition-colors align-middle">
-                  <td className="py-3 px-4 font-bold text-white">{item.produk?.nama_produk ?? '-'}</td>
+                  <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{item.produk?.nama_produk ?? '-'}</td>
                   <td className="py-3 px-4 font-mono text-[10px] text-teal-400">{item.produk?.kode_produk ?? '-'}</td>
-                  <td className="py-3 px-4 text-slate-400 font-semibold">{item.storage?.nama ?? '-'} <span className="text-[9px] text-slate-500 dark:text-slate-400 uppercase">({item.storage?.jenis ?? '-'})</span></td>
-                  <td className="py-3 px-4 text-right font-black text-white">{parseFloat(item.qty || 0).toLocaleString('id-ID')}</td>
+                  <td className="py-3 px-4 text-slate-900 dark:text-slate-300 font-semibold">{item.storage?.nama ?? '-'} <span className="text-[9px] text-slate-500 dark:text-slate-400 uppercase">({item.storage?.jenis ?? '-'})</span></td>
+                  <td className="py-3 px-4 text-right font-black text-slate-900 dark:text-white">{parseFloat(item.qty || 0).toLocaleString('id-ID')}</td>
                   <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{item.produk?.satuan ?? 'Kg'}</td>
-                  <td className="py-3 px-4 text-slate-400">{new Date(item.updated_at).toLocaleString('id-ID')}</td>
+                  <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{new Date(item.updated_at).toLocaleString('id-ID')}</td>
                   <td className="py-3 px-4 text-center">
                     <div className="flex items-center justify-center space-x-1.5">
                       <button onClick={() => openEditModal(item)} className="p-1 rounded bg-slate-900 text-slate-400 hover:text-teal-400 border border-slate-800 transition-colors"><Edit className="h-3.5 w-3.5" /></button>

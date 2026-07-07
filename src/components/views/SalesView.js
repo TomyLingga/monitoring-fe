@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import GlassCard from '../GlassCard';
+import * as XLSX from 'xlsx';
 import { 
-  TrendingUp, Plus, Edit, Trash2, Calendar, FileText, 
-  DollarSign, Truck, ShoppingBag, CreditCard, ChevronLeft, ChevronRight, X, AlertTriangle, CheckCircle
+  TrendingUp, Plus, Edit, Trash2, Calendar, FileText, Upload, Download, Loader2,
+  DollarSign, Truck, ShoppingBag, CreditCard, ChevronLeft, ChevronRight, X, AlertTriangle, CheckCircle, Target, BarChart2
 } from 'lucide-react';
+import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export default function SalesView({
   contracts,
@@ -12,7 +14,15 @@ export default function SalesView({
   storages,
   shipments,
   payments,
+  dailyTargets,
+  startDate,
+  endDate,
+  setStartDate,
+  setEndDate,
   theme,
+  onAddSalesTarget,
+  onUpdateSalesTarget,
+  onDeleteSalesTarget,
   onAddContract,
   onUpdateContract,
   onDeleteContract,
@@ -28,12 +38,20 @@ export default function SalesView({
   // Custom Toast & dialogs
   const [toast, setToast] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Pagination states
   const [contractPage, setContractPage] = useState(1);
   const [shipmentPage, setShipmentPage] = useState(1);
   const [paymentPage, setPaymentPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
+
+  // Shipment filters
+  const todayStr = new Date().toISOString().split('T')[0];
+  const thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+  const [shipFilterStart, setShipFilterStart] = useState(thirtyDaysAgo);
+  const [shipFilterEnd, setShipFilterEnd] = useState(todayStr);
+  const [shipFilterStatus, setShipFilterStatus] = useState('');
 
   // Active modals
   const [activeModal, setActiveModal] = useState(null); // 'add_contract' | 'edit_contract' | 'add_shipment' | 'edit_shipment' | 'add_payment' | 'edit_payment'
@@ -71,9 +89,68 @@ export default function SalesView({
     const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.nominal || 0), 0);
     const totalOustanding = Math.max(0, totalValue - totalPaid);
     const totalQtyShipped = shipments.reduce((sum, s) => sum + parseFloat(s.qty_kirim || 0), 0);
+    const outstandingShipment = Math.max(0, totalQtySold - totalQtyShipped);
 
-    return { totalQtySold, totalValue, totalPaid, totalOustanding, totalQtyShipped };
+    return { totalQtySold, totalValue, totalPaid, totalOustanding, totalQtyShipped, outstandingShipment };
   }, [contracts, payments, shipments]);
+
+  // ── Chart Data ──
+  const chartData = useMemo(() => {
+    // Generate dates between startDate and endDate
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const dateMap = {};
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      dateMap[dateStr] = { date: dateStr, qty_kirim: 0, target_qty: 0 };
+    }
+
+    // Populate targets
+    dailyTargets.forEach(t => {
+      if (dateMap[t.tgl]) {
+        dateMap[t.tgl].target_qty += parseFloat(t.target_qty || 0);
+      }
+    });
+
+    // Populate actual shipments
+    shipments.forEach(s => {
+      const sDate = s.tgl.split('T')[0];
+      if (dateMap[sDate]) {
+        dateMap[sDate].qty_kirim += parseFloat(s.qty_kirim || 0);
+      }
+    });
+
+    return Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
+  }, [startDate, endDate, dailyTargets, shipments]);
+
+  // ── Target Form State ──
+  const [targetForm, setTargetForm] = useState({ tgl: '', target_qty: '' });
+  
+  const openAddTarget = () => {
+    setSelectedItem(null);
+    setTargetForm({ tgl: new Date().toISOString().split('T')[0], target_qty: '' });
+    setActiveModal('add_target');
+  };
+
+  const handleTargetSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      if (selectedItem) {
+        await onUpdateSalesTarget(selectedItem.id, targetForm);
+        showToast('Target berhasil diperbarui');
+      } else {
+        await onAddSalesTarget(targetForm);
+        showToast('Target berhasil ditambahkan');
+      }
+      setActiveModal(null);
+    } catch (err) {
+      showToast('Gagal menyimpan target', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // ── Contract Modals ──
   const openAddContract = () => {
@@ -250,15 +327,127 @@ export default function SalesView({
     return contracts.slice(start, start + ITEMS_PER_PAGE);
   }, [contracts, contractPage]);
 
+  // Filtered shipments with date range and status filter
+  const filteredShipments = useMemo(() => {
+    return shipments.filter(s => {
+      const sDate = (s.tgl?.split('T')[0] || s.tgl || '');
+      const inRange = sDate >= shipFilterStart && sDate <= shipFilterEnd;
+      const inStatus = shipFilterStatus === '' || s.status === shipFilterStatus;
+      return inRange && inStatus;
+    });
+  }, [shipments, shipFilterStart, shipFilterEnd, shipFilterStatus]);
+
   const paginatedShipments = useMemo(() => {
     const start = (shipmentPage - 1) * ITEMS_PER_PAGE;
-    return shipments.slice(start, start + ITEMS_PER_PAGE);
-  }, [shipments, shipmentPage]);
+    return filteredShipments.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredShipments, shipmentPage]);
 
   const paginatedPayments = useMemo(() => {
     const start = (paymentPage - 1) * ITEMS_PER_PAGE;
     return payments.slice(start, start + ITEMS_PER_PAGE);
   }, [payments, paymentPage]);
+
+  // ── Excel Templates & Import ──
+  const downloadShipmentTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['nomor_kontrak', 'qty_kirim', 'qty_terima', 'via', 'incoterm', 'termin', 'status', 'tgl', 'nomor_invoice'],
+      ['SALES-2026-001', 250000, 250000, 'Truck Fuso', 'LOCO', 'CAD', 'Selesai', new Date().toISOString().split('T')[0], 'INV-SALES-001'],
+      ['SALES-2026-002', 100000, 100000, 'Kapal Tanker', 'CIF', 'CAD', 'Proses', new Date().toISOString().split('T')[0], ''],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template Pengiriman');
+    XLSX.writeFile(wb, 'template_pengiriman_penjualan.xlsx');
+    showToast('Template pengiriman berhasil diunduh');
+  };
+
+  const downloadPaymentTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['nomor_kontrak', 'nominal', 'tgl_bayar', 'catatan'],
+      ['SALES-2026-001', 5000000000, new Date().toISOString().split('T')[0], 'Pembayaran DP'],
+      ['SALES-2026-002', 2500000000, new Date().toISOString().split('T')[0], 'Pelunasan'],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template Pembayaran');
+    XLSX.writeFile(wb, 'template_penerimaan_pembayaran.xlsx');
+    showToast('Template pembayaran berhasil diunduh');
+  };
+
+  const handleImportShipment = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        if (!rows.length) { showToast('File kosong', 'error'); return; }
+        let ok = 0, fail = 0;
+        for (const row of rows) {
+          const contract = contracts.find(c => c.nomor_kontrak === String(row.nomor_kontrak || '').trim());
+          if (!contract) { fail++; continue; }
+          let tglVal = row.tgl;
+          if (typeof tglVal === 'number') tglVal = new Date((tglVal - 25569) * 86400000).toISOString().split('T')[0];
+          else tglVal = String(tglVal || '').trim();
+          try {
+            await onAddShipment({
+              kontrak_penjualan_id: contract.id,
+              qty_kirim: parseFloat(row.qty_kirim || 0),
+              qty_terima: parseFloat(row.qty_terima || row.qty_kirim || 0),
+              via: row.via || 'Truck Fuso',
+              incoterm: row.incoterm || 'LOCO',
+              termin: row.termin || 'CAD',
+              status: row.status || 'Selesai',
+              tgl: tglVal,
+              storage_id: null,
+              create_invoice: !!row.nomor_invoice,
+              nomor_invoice: row.nomor_invoice || ''
+            });
+            ok++;
+          } catch { fail++; }
+        }
+        showToast(`Import pengiriman: ${ok} berhasil${fail > 0 ? `, ${fail} gagal` : ''}`, fail > 0 ? 'error' : 'success');
+      } catch (err) {
+        showToast('Gagal membaca file Excel', 'error');
+      }
+      e.target.value = null;
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleImportPayment = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        if (!rows.length) { showToast('File kosong', 'error'); return; }
+        let ok = 0, fail = 0;
+        for (const row of rows) {
+          const contract = contracts.find(c => c.nomor_kontrak === String(row.nomor_kontrak || '').trim());
+          if (!contract) { fail++; continue; }
+          let tglVal = row.tgl_bayar;
+          if (typeof tglVal === 'number') tglVal = new Date((tglVal - 25569) * 86400000).toISOString().split('T')[0];
+          else tglVal = String(tglVal || '').trim();
+          try {
+            await onAddPayment({
+              kontrak_penjualan_id: contract.id,
+              nominal: parseFloat(String(row.nominal || '0').replace(/[^0-9.]/g, '')),
+              tgl_bayar: tglVal,
+              catatan: row.catatan || ''
+            });
+            ok++;
+          } catch { fail++; }
+        }
+        showToast(`Import pembayaran: ${ok} berhasil${fail > 0 ? `, ${fail} gagal` : ''}`, fail > 0 ? 'error' : 'success');
+      } catch (err) {
+        showToast('Gagal membaca file Excel', 'error');
+      }
+      e.target.value = null;
+    };
+    reader.readAsBinaryString(file);
+  };
 
   return (
     <div className="space-y-6 relative">
@@ -325,10 +514,21 @@ export default function SalesView({
             <h4 className="text-sm font-black text-white">{kpis.totalQtyShipped.toLocaleString('id-ID')} Kg</h4>
           </div>
         </GlassCard>
+
+        <GlassCard className="p-4 flex items-center space-x-4 border-l-4 border-l-rose-500" hover={false}>
+          <div className="p-3 rounded-xl bg-rose-500/10 text-rose-400"><AlertTriangle className="h-5 w-5" /></div>
+          <div>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Outstanding Pengiriman</p>
+            <h4 className="text-sm font-black text-white">{kpis.outstandingShipment.toLocaleString('id-ID')} Kg</h4>
+          </div>
+        </GlassCard>
       </div>
 
       {/* Tabs list navigation */}
       <div className="flex space-x-2 border-b border-slate-800 pb-px">
+        <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
+          activeTab === 'dashboard' ? 'border-teal-500 text-teal-400' : 'border-transparent text-slate-400 hover:text-white'
+        }`}>Dashboard Sales</button>
         <button onClick={() => setActiveTab('contracts')} className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
           activeTab === 'contracts' ? 'border-teal-500 text-teal-400' : 'border-transparent text-slate-400 hover:text-white'
         }`}>Kontrak Penjualan</button>
@@ -339,6 +539,157 @@ export default function SalesView({
           activeTab === 'payments' ? 'border-teal-500 text-teal-400' : 'border-transparent text-slate-400 hover:text-white'
         }`}>Daftar Penerimaan Pembayaran</button>
       </div>
+
+      {/* Tab: Dashboard Sales */}
+      {activeTab === 'dashboard' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Chart Header Filter */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-900/60 p-4 rounded-2xl border border-slate-800 gap-4">
+            <div className="flex items-center space-x-3">
+              <TrendingUp className="h-5 w-5 text-teal-400" />
+              <div>
+                <h3 className="text-sm font-black text-white">Trend Penjualan Harian</h3>
+                <p className="text-[10px] text-slate-400">Perbandingan realisasi pengiriman dengan target harian</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+              <span className="text-slate-500 font-bold">s/d</span>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+            </div>
+          </div>
+
+          {/* Achievement Summary Cards */}
+          {(() => {
+            const totalTarget = chartData.reduce((s, d) => s + d.target_qty, 0);
+            const totalRealisasi = chartData.reduce((s, d) => s + d.qty_kirim, 0);
+            const pct = totalTarget > 0 ? Math.min(100, Math.round((totalRealisasi / totalTarget) * 100)) : 0;
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <GlassCard className="p-4 border-l-4 border-l-rose-500" hover={false}>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Target Periode</p>
+                  <p className="mt-1 text-xl font-black text-white">{totalTarget.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">Kg</span></p>
+                  <p className="text-[10px] text-slate-500 mt-1">Total target {dailyTargets.length} hari dalam rentang periode</p>
+                </GlassCard>
+                <GlassCard className="p-4 border-l-4 border-l-teal-500" hover={false}>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Realisasi Pengiriman</p>
+                  <p className="mt-1 text-xl font-black text-teal-400">{totalRealisasi.toLocaleString('id-ID')} <span className="text-xs font-normal text-slate-400">Kg</span></p>
+                  <p className="text-[10px] text-slate-500 mt-1">{shipments.length} pengiriman dalam periode ini</p>
+                </GlassCard>
+                <GlassCard className="p-4" hover={false}>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Pencapaian Penjualan</p>
+                  <p className={`mt-1 text-2xl font-black ${pct >= 100 ? 'text-teal-400' : pct >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>{pct}%</p>
+                  <div className="mt-2 w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${pct >= 100 ? 'bg-gradient-to-r from-teal-500 to-emerald-400' : pct >= 70 ? 'bg-gradient-to-r from-amber-500 to-yellow-400' : 'bg-gradient-to-r from-red-500 to-rose-400'}`}
+                      style={{ width: `${Math.min(pct, 100)}%` }}
+                    />
+                  </div>
+                </GlassCard>
+              </div>
+            );
+          })()}
+
+          {/* Chart */}
+          <GlassCard className="p-6" hover={false}>
+            <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-slate-800">
+              <BarChart2 className="h-5 w-5 text-sky-400" />
+              <h4 className="text-sm font-bold text-white">Grafik Target vs Aktual Pengiriman</h4>
+              <div className="ml-auto flex items-center space-x-4 text-xs">
+                <span className="flex items-center space-x-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-rose-500/80"></span><span className="text-slate-400">Target</span></span>
+                <span className="flex items-center space-x-1.5"><span className="inline-block w-3 h-3 rounded-sm bg-teal-500/80"></span><span className="text-slate-400">Aktual Kirim</span></span>
+              </div>
+            </div>
+            {chartData.length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-slate-500 italic text-xs">Tidak ada data dalam periode ini</div>
+            ) : (
+              <div className="h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }} barCategoryGap="30%">
+                    <defs>
+                      <linearGradient id="salesTargetGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.9}/>
+                        <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.5}/>
+                      </linearGradient>
+                      <linearGradient id="salesActualGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.9}/>
+                        <stop offset="100%" stopColor="#14b8a6" stopOpacity={0.5}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                    <XAxis dataKey="date" stroke="#475569" fontSize={11} tickMargin={8}
+                      tickFormatter={v => v.slice(5)} />
+                    <YAxis stroke="#475569" fontSize={11} width={50}
+                      tickFormatter={v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'rgba(15,23,42,0.95)', borderColor: '#334155', borderRadius: '10px', fontSize: '11px' }}
+                      itemStyle={{ color: '#e2e8f0' }}
+                      labelStyle={{ color: '#94a3b8', fontWeight: 700 }}
+                      formatter={(value, name) => [`${value.toLocaleString('id-ID')} Kg`, name]}
+                    />
+                    <Bar dataKey="target_qty" name="Target Harian (Kg)" fill="url(#salesTargetGrad)" radius={[4,4,0,0]} />
+                    <Bar dataKey="qty_kirim" name="Aktual Dikirim (Kg)" fill="url(#salesActualGrad)" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </GlassCard>
+
+          {/* Daily Targets List */}
+          <GlassCard hover={false}>
+            <div className="flex justify-between items-center p-5 border-b border-slate-800">
+              <div className="flex items-center space-x-3">
+                <Target className="h-5 w-5 text-rose-400" />
+                <h3 className="font-bold text-white">Target Penjualan Harian</h3>
+              </div>
+              <button onClick={openAddTarget} className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg glass-button-primary text-xs font-bold">
+                <Plus className="h-3.5 w-3.5" />
+                <span>Set Target</span>
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-900/50 text-slate-400 uppercase font-bold">
+                  <tr>
+                    <th className="px-4 py-3 border-b border-slate-800">Tanggal</th>
+                    <th className="px-4 py-3 border-b border-slate-800 text-right">Target Qty (Kg)</th>
+                    <th className="px-4 py-3 border-b border-slate-800 text-right">Realisasi (Kg)</th>
+                    <th className="px-4 py-3 border-b border-slate-800 text-right">Pencapaian</th>
+                    <th className="px-4 py-3 border-b border-slate-800 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {dailyTargets.map(t => {
+                    const realisasiDay = shipments
+                      .filter(s => (s.tgl?.split('T')[0] || s.tgl) === (t.tgl?.split('T')[0] || t.tgl))
+                      .reduce((sum, s) => sum + parseFloat(s.qty_kirim || 0), 0);
+                    const pct = parseFloat(t.target_qty) > 0 ? Math.min(100, Math.round((realisasiDay / parseFloat(t.target_qty)) * 100)) : 0;
+                    return (
+                      <tr key={t.id} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3 text-white">{t.tgl}</td>
+                        <td className="px-4 py-3 text-white text-right font-semibold">{parseFloat(t.target_qty).toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-3 text-teal-400 text-right font-semibold">{realisasiDay.toLocaleString('id-ID')}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={`font-bold text-xs ${pct >= 100 ? 'text-teal-400' : pct >= 70 ? 'text-amber-400' : 'text-rose-400'}`}>{pct}%</span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => { setSelectedItem(t); setTargetForm({ tgl: t.tgl, target_qty: t.target_qty }); setActiveModal('edit_target'); }} className="p-1 text-slate-400 hover:text-teal-400 transition-colors mr-2"><Edit className="h-4 w-4" /></button>
+                          <button onClick={() => setConfirmDialog({ message: 'Hapus target penjualan ini?', onConfirm: async () => { await onDeleteSalesTarget(t.id); setConfirmDialog(null); } })} className="p-1 text-slate-400 hover:text-red-400 transition-colors"><Trash2 className="h-4 w-4" /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {dailyTargets.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="px-4 py-6 text-center text-slate-500 italic">Belum ada target penjualan untuk rentang tanggal ini.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </div>
+      )}
 
       {/* Tab: Kontrak Penjualan */}
       {activeTab === 'contracts' && (
@@ -358,7 +709,9 @@ export default function SalesView({
                     <th className="py-3 px-4 text-right">Harga Satuan</th>
                     <th className="py-3 px-4 text-right">Total Nilai</th>
                     <th className="py-3 px-4 text-right">Terkirim</th>
+                    <th className="py-3 px-4 text-right text-sky-400">Sisa Kirim</th>
                     <th className="py-3 px-4 text-right">Terbayar</th>
+                    <th className="py-3 px-4 text-right text-rose-400">Sisa Bayar</th>
                     <th className="py-3 px-4 text-center">Status</th>
                     <th className="py-3 px-4 text-center">Aksi</th>
                   </tr>
@@ -366,6 +719,7 @@ export default function SalesView({
                 <tbody className="divide-y divide-slate-800/60">
                   {paginatedContracts.map((c) => {
                     const outstanding = Math.max(0, c.qty - c.total_terkirim);
+                    const outstandingPayment = Math.max(0, (c.qty * c.harga_satuan) - c.total_terbayar);
                     return (
                       <tr key={c.id} className="hover:bg-slate-900/40 transition-colors align-middle">
                         <td className="py-3 px-4 font-bold text-white">{c.nomor_kontrak}</td>
@@ -375,7 +729,13 @@ export default function SalesView({
                         <td className="py-3 px-4 text-right text-slate-300">{formatRupiah(c.harga_satuan)}</td>
                         <td className="py-3 px-4 text-right text-emerald-400 font-black">{formatRupiah(c.total_nilai_kontrak)}</td>
                         <td className="py-3 px-4 text-right text-sky-400 font-bold">{c.total_terkirim.toLocaleString('id-ID')}</td>
+                        <td className="py-3 px-4 text-right font-bold">
+                          <span className={outstanding > 0 ? 'text-amber-400' : 'text-slate-500'}>{outstanding.toLocaleString('id-ID')}</span>
+                        </td>
                         <td className="py-3 px-4 text-right text-teal-300 font-bold">{formatRupiah(c.total_terbayar)}</td>
+                        <td className="py-3 px-4 text-right font-bold">
+                          <span className={outstandingPayment > 0 ? 'text-rose-400' : 'text-slate-500'}>{formatRupiah(outstandingPayment)}</span>
+                        </td>
                         <td className="py-3 px-4 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
                             c.status === 'aktif' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : 'bg-slate-800 text-slate-400'
@@ -416,8 +776,29 @@ export default function SalesView({
       {/* Tab: Pengiriman Penjualan */}
       {activeTab === 'shipments' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={() => openAddShipment(null)} className="flex items-center space-x-1.5 px-4 py-2 rounded-xl glass-button-primary text-xs font-bold"><Plus className="h-4 w-4" /><span>Buat Pengiriman</span></button>
+          {/* Filter bar */}
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
+            <Calendar className="h-4 w-4 text-teal-400 shrink-0" />
+            <input type="date" value={shipFilterStart} onChange={e => { setShipFilterStart(e.target.value); setShipmentPage(1); }} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+            <span className="text-slate-500 font-bold text-xs">s/d</span>
+            <input type="date" value={shipFilterEnd} onChange={e => { setShipFilterEnd(e.target.value); setShipmentPage(1); }} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+            <select value={shipFilterStatus} onChange={e => { setShipFilterStatus(e.target.value); setShipmentPage(1); }} className="px-3 py-1.5 rounded-lg glass-input text-xs">
+              <option value="">Semua Status</option>
+              <option value="Proses">Proses</option>
+              <option value="Selesai">Selesai</option>
+            </select>
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={downloadShipmentTemplate} className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors">
+                <Download className="h-3.5 w-3.5" /><span>Template Excel</span>
+              </button>
+              <label className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors cursor-pointer">
+                <Upload className="h-3.5 w-3.5" /><span>Import Excel</span>
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImportShipment} className="hidden" />
+              </label>
+              <button onClick={() => openAddShipment(null)} className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg glass-button-primary text-xs font-bold">
+                <Plus className="h-3.5 w-3.5" /><span>Buat Pengiriman</span>
+              </button>
+            </div>
           </div>
           <GlassCard className="overflow-hidden" hover={false}>
             <div className="overflow-x-auto">
@@ -493,8 +874,20 @@ export default function SalesView({
       {/* Tab: Pembayaran Penjualan */}
       {activeTab === 'payments' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={() => openAddPayment(null)} className="flex items-center space-x-1.5 px-4 py-2 rounded-xl glass-button-primary text-xs font-bold"><Plus className="h-4 w-4" /><span>Catat Pembayaran Baru</span></button>
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
+            <span className="text-xs text-slate-400 font-bold">Penerimaan Pembayaran</span>
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={downloadPaymentTemplate} className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors">
+                <Download className="h-3.5 w-3.5" /><span>Template Excel</span>
+              </button>
+              <label className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors cursor-pointer">
+                <Upload className="h-3.5 w-3.5" /><span>Import Excel</span>
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPayment} className="hidden" />
+              </label>
+              <button onClick={() => openAddPayment(null)} className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg glass-button-primary text-xs font-bold">
+                <Plus className="h-3.5 w-3.5" /><span>Catat Pembayaran Baru</span>
+              </button>
+            </div>
           </div>
           <GlassCard className="overflow-hidden" hover={false}>
             <div className="overflow-x-auto">
@@ -747,6 +1140,37 @@ export default function SalesView({
               </div>
               <div className="flex space-x-3 pt-4">
                 <button type="submit" className="flex-1 py-3 rounded-xl glass-button-primary text-xs font-bold">Simpan Pembayaran</button>
+                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold hover:text-white transition-colors">Batal</button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Target Modal */}
+      {(activeModal === 'add_target' || activeModal === 'edit_target') && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9990]">
+          <GlassCard className="w-full max-w-md border-teal-500/20" hover={false}>
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-3 text-teal-400">
+                <Target className="h-5 w-5" />
+                <h3 className="font-extrabold text-white text-base">
+                  {activeModal === 'edit_target' ? 'Edit Target Penjualan' : 'Set Target Penjualan Harian'}
+                </h3>
+              </div>
+              <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-white transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <form onSubmit={handleTargetSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Target</label>
+                <input type="date" required value={targetForm.tgl} onChange={e => setTargetForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Target Qty Penjualan (Kg)</label>
+                <input type="number" required placeholder="Contoh: 1500000" value={targetForm.target_qty} onChange={e => setTargetForm(prev => ({ ...prev, target_qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+              </div>
+              <div className="flex space-x-3 pt-4">
+                <button type="submit" className="flex-1 py-3 rounded-xl glass-button-primary text-xs font-bold">Simpan Target</button>
                 <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold hover:text-white transition-colors">Batal</button>
               </div>
             </form>
