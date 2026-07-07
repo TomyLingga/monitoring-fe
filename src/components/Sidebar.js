@@ -7,7 +7,9 @@ import {
   Menu,
   FlaskConical,
   Boxes,
-  TrendingUp
+  TrendingUp,
+  Truck,
+  DollarSign
 } from 'lucide-react';
 
 export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, isOpen, onToggle }) {
@@ -16,6 +18,8 @@ export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, isO
     { id: 'produksi', name: 'Dashboard Produksi', icon: FlaskConical },
     { id: 'sales', name: 'Dashboard Sales', icon: TrendingUp },
     { id: 'stok', name: 'Dashboard Stok', icon: Boxes },
+    { id: 'logistics', name: 'Dashboard Logistik', icon: Truck },
+    { id: 'finance', name: 'Dashboard Keuangan', icon: DollarSign },
     { id: 'master', name: 'Master Data', icon: Database },
   ];
 

@@ -4,7 +4,8 @@ import SuppliersView from './SuppliersView';
 import StorageMasterView from './StorageMasterView';
 import ProductMasterView from './ProductMasterView';
 import BuyersView from './BuyersView';
-import { Users, Database, Tag, AlertTriangle, CheckCircle, Info, X, ShoppingBag } from 'lucide-react';
+import BankAccountsView from './FinanceBankAccountsView'; // We will create this or it exists? Wait, FinanceView has BankAccount inside it right now. We will need to extract BankAccountsView to a separate file, or just create it.
+import { Users, Database, Tag, AlertTriangle, CheckCircle, Info, X, ShoppingBag, CreditCard } from 'lucide-react';
 
 export default function MasterDataView({
   suppliers,
@@ -25,7 +26,12 @@ export default function MasterDataView({
   buyers,
   onAddBuyer,
   onUpdateBuyer,
-  onDeleteBuyer
+  onDeleteBuyer,
+
+  bankAccounts,
+  onAddBank,
+  onUpdateBank,
+  onDeleteBank
 }) {
   const [activeSubTab, setActiveSubTab] = useState('suppliers'); 
   
@@ -122,11 +128,31 @@ export default function MasterDataView({
     showToast('Buyer berhasil diperbarui', 'success');
   };
 
+  const wrappedAddBank = (payload) => {
+    onAddBank(payload);
+    showToast('Rekening Bank baru berhasil ditambahkan', 'success');
+  };
+  const wrappedUpdateBank = (id, payload) => {
+    onUpdateBank(id, payload);
+    showToast('Rekening Bank berhasil diperbarui', 'success');
+  };
+  const wrappedDeleteBank = (id) => {
+    setConfirmDialog({
+      message: 'Hapus Rekening Bank ini? Pastikan tidak ada transaksi yang terkait.',
+      onConfirm: () => {
+        onDeleteBank(id);
+        setConfirmDialog(null);
+        showToast('Rekening Bank berhasil dihapus', 'success');
+      }
+    });
+  };
+
   const subTabs = [
     { id: 'suppliers', label: 'Supplier Master', icon: Users, desc: 'Mitra Supplier Bahan CPO' },
     { id: 'buyers', label: 'Buyer Master', icon: ShoppingBag, desc: 'Mitra Buyer / Customer Retail' },
     { id: 'storages', label: 'Storage Master', icon: Database, desc: 'Pengaturan Tangki & Gudang' },
     { id: 'products', label: 'Produk & Material', icon: Tag, desc: 'Daftar Produk, Material & Satuan' },
+    { id: 'banks', label: 'Rekening Bank', icon: CreditCard, desc: 'Master Rekening Bank' },
   ];
 
   return (
@@ -238,6 +264,14 @@ export default function MasterDataView({
             onAdd={wrappedAddProduct}
             onUpdate={wrappedUpdateProduct}
             onDelete={wrappedDeleteProduct}
+          />
+        )}
+        {activeSubTab === 'banks' && (
+          <BankAccountsView
+            bankAccounts={bankAccounts}
+            onAddBank={wrappedAddBank}
+            onUpdateBank={wrappedUpdateBank}
+            onDeleteBank={wrappedDeleteBank}
           />
         )}
       </div>

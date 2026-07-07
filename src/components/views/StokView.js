@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import GlassCard from '../GlassCard';
+import CustomDateInput from '../ui/CustomDateInput';
 import * as XLSX from 'xlsx';
 import {
   Boxes, Plus, Edit, Trash2, Download, Upload, X, CheckCircle, AlertTriangle,
@@ -14,7 +15,8 @@ export default function StokView({
   theme,
   onAddStock,
   onUpdateStock,
-  onDeleteStock
+  onDeleteStock,
+  onBulkAddStock
 }) {
   const [toast, setToast] = useState(null);
   const [confirmDialog, setConfirmDialog] = useState(null);
@@ -31,6 +33,7 @@ export default function StokView({
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStorage, setFilterStorage] = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -67,9 +70,10 @@ export default function StokView({
       const matchesSearch = productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             productCode.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStorage = filterStorage ? String(item.storage_id) === String(filterStorage) : true;
-      return matchesSearch && matchesStorage;
+      const matchesDate = filterDate ? (item.updated_at && item.updated_at.split('T')[0] === filterDate) : true;
+      return matchesSearch && matchesStorage && matchesDate;
     });
-  }, [stocks, searchQuery, filterStorage]);
+  }, [stocks, searchQuery, filterStorage, filterDate]);
 
   // Totals calculated dynamically
   const totalCurah = useMemo(() => {
@@ -194,57 +198,34 @@ export default function StokView({
           return;
         }
 
-        let successCount = 0;
-        let errorCount = 0;
-        let errMsg = '';
-
+        const payloads = [];
         for (const row of sheetData) {
           const rawCode = row.kode_produk ? String(row.kode_produk).trim().toUpperCase() : '';
           const rawStorage = row.nama_storage ? String(row.nama_storage).trim() : '';
           const rawQty = row.qty ? parseFloat(String(row.qty).replace(/[^\d.]/g, '')) : 0;
 
           if (!rawCode || !rawStorage) {
-            errorCount++;
-            errMsg = 'Kode produk atau nama storage kosong';
-            continue;
+            throw new Error('Kode produk atau nama storage kosong pada salah satu baris');
           }
 
           const prod = products.find(p => p.kode_produk?.toUpperCase() === rawCode);
           const store = storages.find(s => s.nama?.toLowerCase() === rawStorage.toLowerCase());
 
-          if (!prod) {
-            errorCount++;
-            errMsg = `Produk dengan kode "${rawCode}" tidak ditemukan`;
-            continue;
-          }
+          if (!prod) throw new Error(`Produk dengan kode "${rawCode}" tidak ditemukan`);
+          if (!store) throw new Error(`Storage "${rawStorage}" tidak ditemukan`);
 
-          if (!store) {
-            errorCount++;
-            errMsg = `Storage "${rawStorage}" tidak ditemukan`;
-            continue;
-          }
-
-          try {
-            await onAddStock({
-              produk_id: prod.id,
-              storage_id: store.id,
-              qty: rawQty
-            });
-            successCount++;
-          } catch (err) {
-            errorCount++;
-            errMsg = err.message || 'API error';
-          }
+          payloads.push({
+            produk_id: prod.id,
+            storage_id: store.id,
+            qty: rawQty
+          });
         }
-
-        if (errorCount > 0) {
-          showToast(`Impor selesai: ${successCount} berhasil, ${errorCount} gagal (${errMsg})`, 'error');
-        } else {
-          showToast(`Berhasil mengimpor ${successCount} data stok!`, 'success');
-        }
+        
+        await onBulkAddStock(payloads);
+        showToast(`Import stok berhasil (${payloads.length} baris)`, 'success');
       } catch (err) {
-        console.error(err);
-        showToast('Gagal memproses file Excel', 'error');
+        console.error('Import error:', err);
+        showToast(err.message || 'Gagal membaca format excel', 'error');
       }
       e.target.value = null;
     };
@@ -422,6 +403,12 @@ export default function StokView({
               <option value="">Semua Penyimpanan</option>
               {storages.map(s => <option key={s.id} value={s.id}>{s.nama} ({s.jenis.toUpperCase()})</option>)}
             </select>
+            <CustomDateInput 
+              value={filterDate} 
+              onChange={val => { setFilterDate(val); setCurrentPage(1); }} 
+              className="w-36" 
+              placeholder="Filter Tanggal" 
+            />
             <input 
               type="text" 
               placeholder="Cari produk atau storage..."
@@ -432,6 +419,10 @@ export default function StokView({
             <button onClick={openAddModal} className="flex items-center space-x-2 px-4 py-2.5 rounded-xl glass-button-primary text-xs font-bold">
               <Plus className="h-4 w-4" />
               <span>Tambah Stok</span>
+            </button>
+            <button onClick={downloadTemplate} className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors text-xs font-bold">
+              <Download className="h-4 w-4" />
+              <span>Template Excel</span>
             </button>
             <div className="relative">
               <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
@@ -459,8 +450,8 @@ export default function StokView({
             <tbody className="divide-y divide-slate-800/60">
               {paginatedStocks.map(item => (
                 <tr key={item.id} className="hover:bg-slate-900/40 transition-colors align-middle">
-                  <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{item.produk?.nama_produk ?? '-'}</td>
-                  <td className="py-3 px-4 font-mono text-[10px] text-teal-400">{item.produk?.kode_produk ?? '-'}</td>
+                  <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">{item.produk?.nama_produk || 'N/A'}</td>
+                  <td className="py-3 px-4 text-slate-500 font-mono text-[10px]">{item.produk?.kode_produk || '-'}</td>
                   <td className="py-3 px-4 text-slate-900 dark:text-slate-300 font-semibold">{item.storage?.nama ?? '-'} <span className="text-[9px] text-slate-500 dark:text-slate-400 uppercase">({item.storage?.jenis ?? '-'})</span></td>
                   <td className="py-3 px-4 text-right font-black text-slate-900 dark:text-white">{parseFloat(item.qty || 0).toLocaleString('id-ID')}</td>
                   <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{item.produk?.satuan ?? 'Kg'}</td>

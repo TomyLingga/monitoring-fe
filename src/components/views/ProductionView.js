@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import GlassCard from '../GlassCard';
+import CustomDateInput from '../ui/CustomDateInput';
 import * as XLSX from 'xlsx';
 import {
   FlaskConical, Layers, Package, Calendar, Plus, Edit, Trash2,
@@ -18,6 +19,7 @@ export default function ProductionView({
   onAddFraksinasi, onUpdateFraksinasi, onDeleteFraksinasi,
   onAddPackaging, onUpdatePackaging, onDeletePackaging,
   onAddProductionTarget, onUpdateProductionTarget, onDeleteProductionTarget,
+  onBulkAddRefinery, onBulkAddFraksinasi, onBulkAddPackaging
 }) {
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -309,17 +311,10 @@ export default function ProductionView({
           return;
         }
 
-        let successCount = 0;
-        let errorCount = 0;
-        let errMsg = '';
-
+        const payloads = [];
         for (const row of sheetData) {
           let tglVal = row.tanggal;
-          if (!tglVal) {
-            errorCount++;
-            errMsg = 'Kolom tanggal kosong';
-            continue;
-          }
+          if (!tglVal) throw new Error('Kolom tanggal kosong pada salah satu baris');
 
           if (typeof tglVal === 'number') {
             const dateObj = new Date((tglVal - 25569) * 86400 * 1000);
@@ -330,7 +325,6 @@ export default function ProductionView({
 
           const catatan = row.catatan ? String(row.catatan).trim() : '';
 
-          // Parse comma separated list of inputs
           const rawBahanKodes = row.kode_produk_bahan ? String(row.kode_produk_bahan).split(',') : [];
           const rawBahanQtys = row.qty_bahan ? String(row.qty_bahan).split(',') : [];
           const rawBahanStorages = row.nama_storage_bahan ? String(row.nama_storage_bahan).split(',') : [];
@@ -340,7 +334,6 @@ export default function ProductionView({
           const rawHasilStorages = row.nama_storage_hasil ? String(row.nama_storage_hasil).split(',') : [];
 
           const bahanList = [];
-          let checkBahan = true;
           for (let i = 0; i < rawBahanKodes.length; i++) {
             const code = rawBahanKodes[i].trim().toUpperCase();
             if (!code) continue;
@@ -348,27 +341,18 @@ export default function ProductionView({
             const storageName = rawBahanStorages[i] ? rawBahanStorages[i].trim() : '';
             
             const prod = products.find(p => p.kode_produk?.toUpperCase() === code);
-            if (!prod) {
-              checkBahan = false;
-              errMsg = `Produk bahan "${code}" tidak ditemukan`;
-              break;
-            }
+            if (!prod) throw new Error(`Produk bahan "${code}" tidak ditemukan`);
 
             let storageId = null;
             if (storageName && storageName.toLowerCase() !== 'otomatis') {
               const store = storages.find(s => s.nama?.toLowerCase() === storageName.toLowerCase());
-              if (!store) {
-                checkBahan = false;
-                errMsg = `Storage bahan "${storageName}" tidak ditemukan`;
-                break;
-              }
+              if (!store) throw new Error(`Storage bahan "${storageName}" tidak ditemukan`);
               storageId = store.id;
             }
             bahanList.push({ produk_id: prod.id, qty, storage_id: storageId });
           }
 
           const hasilList = [];
-          let checkHasil = true;
           for (let i = 0; i < rawHasilKodes.length; i++) {
             const code = rawHasilKodes[i].trim().toUpperCase();
             if (!code) continue;
@@ -376,58 +360,29 @@ export default function ProductionView({
             const storageName = rawHasilStorages[i] ? rawHasilStorages[i].trim() : '';
 
             const prod = products.find(p => p.kode_produk?.toUpperCase() === code);
-            if (!prod) {
-              checkHasil = false;
-              errMsg = `Produk hasil "${code}" tidak ditemukan`;
-              break;
-            }
+            if (!prod) throw new Error(`Produk hasil "${code}" tidak ditemukan`);
 
             let storageId = null;
             if (storageName && storageName.toLowerCase() !== 'otomatis') {
               const store = storages.find(s => s.nama?.toLowerCase() === storageName.toLowerCase());
-              if (!store) {
-                checkHasil = false;
-                errMsg = `Storage hasil "${storageName}" tidak ditemukan`;
-                break;
-              }
+              if (!store) throw new Error(`Storage hasil "${storageName}" tidak ditemukan`);
               storageId = store.id;
             }
             hasilList.push({ produk_id: prod.id, qty, storage_id: storageId });
           }
 
-          if (!checkBahan || !checkHasil) {
-            errorCount++;
-            continue;
-          }
-
           if (bahanList.length === 0 && hasilList.length === 0) {
-            errorCount++;
-            errMsg = 'Bahan dan hasil tidak boleh kosong';
-            continue;
+            throw new Error('Bahan dan hasil tidak boleh kosong pada salah satu baris');
           }
 
-          const payload = { tgl: tglVal, catatan, bahan: bahanList, hasil: hasilList };
-
-          try {
-            if (activeTab === 'refinery') {
-              await onAddRefinery(payload);
-            } else if (activeTab === 'fraksinasi') {
-              await onAddFraksinasi(payload);
-            } else {
-              await onAddPackaging(payload);
-            }
-            successCount++;
-          } catch (err) {
-            errorCount++;
-            errMsg = err.message || 'API error';
-          }
+          payloads.push({ tgl: tglVal, catatan, bahan: bahanList, hasil: hasilList });
         }
+        
+        if (activeTab === 'refinery') await onBulkAddRefinery(payloads);
+        else if (activeTab === 'fraksinasi') await onBulkAddFraksinasi(payloads);
+        else await onBulkAddPackaging(payloads);
 
-        if (errorCount > 0) {
-          showToast(`Impor selesai: ${successCount} berhasil, ${errorCount} gagal (${errMsg})`, 'error');
-        } else {
-          showToast(`Berhasil mengimpor ${successCount} data proses ${activeTab}!`, 'success');
-        }
+        showToast(`Import berhasil memproses ${payloads.length} data ${activeTab}`, 'success');
       } catch (err) {
         console.error(err);
         showToast('Gagal memproses file Excel', 'error');
@@ -505,17 +460,17 @@ export default function ProductionView({
             <h4 className="text-xs font-bold text-white uppercase tracking-wider">Filter Periode</h4>
           </div>
           <div className="space-y-3">
-            <div className="flex items-center space-x-2 bg-slate-950/40 border border-slate-900 rounded-lg px-3 py-2">
+            <div className="flex items-center space-x-2 bg-slate-950/40 border border-slate-900 rounded-lg px-2 py-1.5">
               <span className="text-[10px] text-slate-500 font-bold uppercase w-10 shrink-0">Dari</span>
-              <input type="date" value={startDate} max={todayStr}
-                onChange={e => onDateChange(e.target.value, endDate)}
-                className="bg-transparent border-0 text-xs text-white focus:ring-0 outline-none flex-1 font-sans" />
+              <CustomDateInput value={startDate} max={todayStr}
+                onChange={val => onDateChange(val, endDate)}
+                className="flex-1" />
             </div>
-            <div className="flex items-center space-x-2 bg-slate-950/40 border border-slate-900 rounded-lg px-3 py-2">
+            <div className="flex items-center space-x-2 bg-slate-950/40 border border-slate-900 rounded-lg px-2 py-1.5">
               <span className="text-[10px] text-slate-500 font-bold uppercase w-10 shrink-0">S/d</span>
-              <input type="date" value={endDate} max={todayStr}
-                onChange={e => onDateChange(startDate, e.target.value)}
-                className="bg-transparent border-0 text-xs text-white focus:ring-0 outline-none flex-1 font-sans" />
+              <CustomDateInput value={endDate} max={todayStr}
+                onChange={val => onDateChange(startDate, val)}
+                className="flex-1" />
             </div>
           </div>
         </GlassCard>

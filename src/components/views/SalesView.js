@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import CustomDateInput from '../ui/CustomDateInput';
 import GlassCard from '../GlassCard';
 import * as XLSX from 'xlsx';
 import { 
@@ -31,9 +32,16 @@ export default function SalesView({
   onDeleteShipment,
   onAddPayment,
   onUpdatePayment,
-  onDeletePayment
+  onDeletePayment,
+  onBulkAddShipment,
+  onBulkAddPayment,
+  levyDuties = [],
+  onAddLevyDuty,
+  onUpdateLevyDuty,
+  onDeleteLevyDuty,
+  onBulkAddLevyDuty
 }) {
-  const [activeTab, setActiveTab] = useState('contracts'); // 'contracts' | 'shipments' | 'payments'
+  const [activeTab, setActiveTab] = useState('contracts'); // 'contracts' | 'shipments' | 'payments' | 'levyduties'
   
   // Custom Toast & dialogs
   const [toast, setToast] = useState(null);
@@ -44,6 +52,7 @@ export default function SalesView({
   const [contractPage, setContractPage] = useState(1);
   const [shipmentPage, setShipmentPage] = useState(1);
   const [paymentPage, setPaymentPage] = useState(1);
+  const [levyDutyPage, setLevyDutyPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
 
   // Shipment filters
@@ -73,13 +82,24 @@ export default function SalesView({
     kontrak_penjualan_id: '', nominal: '', tgl_bayar: '', catatan: ''
   });
 
+  const [levyDutyForm, setLevyDutyForm] = useState({
+    invoice_id: '', kapal: '', tarif: '', kurs: '', nilai_akhir: ''
+  });
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
   const formatRupiah = (val) => {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+    if (val === undefined || val === null) return '-';
+    const num = parseFloat(val) || 0;
+    const isNegative = num < 0;
+    const absVal = Math.abs(num);
+    const formatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(absVal);
+    // Remove space between Rp and number if any, then prepend minus if negative
+    const cleanFormatted = formatted.replace(/^Rp\s?/, 'Rp ');
+    return isNegative ? `- ${cleanFormatted}` : cleanFormatted;
   };
 
   // ── KPI calculations ──
@@ -115,8 +135,8 @@ export default function SalesView({
 
     // Populate actual shipments
     shipments.forEach(s => {
-      const sDate = s.tgl.split('T')[0];
-      if (dateMap[sDate]) {
+      const sDate = (s.tgl || '').split('T')[0];
+      if (sDate && dateMap[sDate]) {
         dateMap[sDate].qty_kirim += parseFloat(s.qty_kirim || 0);
       }
     });
@@ -131,6 +151,32 @@ export default function SalesView({
     setSelectedItem(null);
     setTargetForm({ tgl: new Date().toISOString().split('T')[0], target_qty: '' });
     setActiveModal('add_target');
+  };
+
+  const handleLevyDutySubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    const payload = {
+      ...levyDutyForm,
+      invoice_id: parseInt(levyDutyForm.invoice_id),
+      tarif: parseFloat(levyDutyForm.tarif || 0),
+      kurs: parseFloat(levyDutyForm.kurs || 0),
+      nilai_akhir: parseFloat(levyDutyForm.nilai_akhir || 0)
+    };
+    try {
+      if (selectedItem) {
+        await onUpdateLevyDuty(selectedItem.id, payload);
+        showToast('Levy Duty berhasil diperbarui');
+      } else {
+        await onAddLevyDuty(payload);
+        showToast('Levy Duty berhasil ditambahkan');
+      }
+      setActiveModal(null);
+    } catch (err) {
+      showToast('Gagal menyimpan Levy Duty', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleTargetSubmit = async (e) => {
@@ -224,7 +270,8 @@ export default function SalesView({
       tgl: new Date().toISOString().split('T')[0],
       storage_id: '',
       create_invoice: true,
-      nomor_invoice: `INV-SALES-00${shipments.length + 1}`
+      nomor_invoice: `INV-SALES-${Date.now()}`,
+      nilai_invoice: ''
     });
     setActiveModal('add_shipment');
   };
@@ -242,7 +289,8 @@ export default function SalesView({
       tgl: s.tgl?.split('T')[0] ?? '',
       storage_id: s.storage_id ? String(s.storage_id) : '',
       create_invoice: false,
-      nomor_invoice: ''
+      nomor_invoice: '',
+      nilai_invoice: ''
     });
     setActiveModal('edit_shipment');
   };
@@ -347,12 +395,17 @@ export default function SalesView({
     return payments.slice(start, start + ITEMS_PER_PAGE);
   }, [payments, paymentPage]);
 
+  const paginatedLevyDuties = useMemo(() => {
+    const start = (levyDutyPage - 1) * ITEMS_PER_PAGE;
+    return levyDuties.slice(start, start + ITEMS_PER_PAGE);
+  }, [levyDuties, levyDutyPage]);
+
   // ── Excel Templates & Import ──
   const downloadShipmentTemplate = () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['nomor_kontrak', 'qty_kirim', 'qty_terima', 'via', 'incoterm', 'termin', 'status', 'tgl', 'nomor_invoice'],
-      ['SALES-2026-001', 250000, 250000, 'Truck Fuso', 'LOCO', 'CAD', 'Selesai', new Date().toISOString().split('T')[0], 'INV-SALES-001'],
-      ['SALES-2026-002', 100000, 100000, 'Kapal Tanker', 'CIF', 'CAD', 'Proses', new Date().toISOString().split('T')[0], ''],
+      ['nomor_kontrak', 'qty_kirim', 'qty_terima', 'via', 'incoterm', 'termin', 'status', 'tgl', 'nomor_invoice', 'nilai_invoice'],
+      ['SALES-2026-001', 250000, 250000, 'Truck Fuso', 'LOCO', 'CAD', 'Selesai', new Date().toISOString().split('T')[0], `INV-SALES-${Date.now()}`, '4125000000'],
+      ['SALES-2026-002', 100000, 100000, 'Kapal Tanker', 'CIF', 'CAD', 'Proses', new Date().toISOString().split('T')[0], '', ''],
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template Pengiriman');
@@ -372,6 +425,18 @@ export default function SalesView({
     showToast('Template pembayaran berhasil diunduh');
   };
 
+  const downloadLevyDutyTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['nomor_invoice', 'kapal', 'tarif', 'kurs', 'nilai_akhir'],
+      ['INV-SALES-001', 'MT. GLORY', 200, 16000, 3200000],
+      ['INV-SALES-002', 'MT. OMEGA', 150, 15500, 2325000],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template Levy Duty');
+    XLSX.writeFile(wb, 'template_levy_duty.xlsx');
+    showToast('Template Levy Duty berhasil diunduh');
+  };
+
   const handleImportShipment = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -381,33 +446,35 @@ export default function SalesView({
         const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         if (!rows.length) { showToast('File kosong', 'error'); return; }
-        let ok = 0, fail = 0;
+        const payloads = [];
         for (const row of rows) {
           const contract = contracts.find(c => c.nomor_kontrak === String(row.nomor_kontrak || '').trim());
-          if (!contract) { fail++; continue; }
+          if (!contract) throw new Error(`Kontrak ${row.nomor_kontrak} tidak ditemukan.`);
           let tglVal = row.tgl;
           if (typeof tglVal === 'number') tglVal = new Date((tglVal - 25569) * 86400000).toISOString().split('T')[0];
           else tglVal = String(tglVal || '').trim();
-          try {
-            await onAddShipment({
-              kontrak_penjualan_id: contract.id,
-              qty_kirim: parseFloat(row.qty_kirim || 0),
-              qty_terima: parseFloat(row.qty_terima || row.qty_kirim || 0),
-              via: row.via || 'Truck Fuso',
-              incoterm: row.incoterm || 'LOCO',
-              termin: row.termin || 'CAD',
-              status: row.status || 'Selesai',
-              tgl: tglVal,
-              storage_id: null,
-              create_invoice: !!row.nomor_invoice,
-              nomor_invoice: row.nomor_invoice || ''
-            });
-            ok++;
-          } catch { fail++; }
+          
+          payloads.push({
+            kontrak_penjualan_id: contract.id,
+            qty_kirim: parseFloat(row.qty_kirim || 0),
+            qty_terima: parseFloat(row.qty_terima || row.qty_kirim || 0),
+            via: row.via || 'Truck Fuso',
+            incoterm: row.incoterm || 'LOCO',
+            termin: row.termin || 'CAD',
+            status: row.status || 'Selesai',
+            tgl: tglVal,
+            storage_id: null,
+            create_invoice: !!row.nomor_invoice,
+            nomor_invoice: row.nomor_invoice || '',
+            nilai_invoice: row.nilai_invoice ? parseFloat(String(row.nilai_invoice).replace(/[^0-9.]/g, '')) : null
+          });
         }
-        showToast(`Import pengiriman: ${ok} berhasil${fail > 0 ? `, ${fail} gagal` : ''}`, fail > 0 ? 'error' : 'success');
+        
+        await onBulkAddShipment(payloads);
+        showToast(`Import pengiriman: ${payloads.length} baris berhasil diproses`, 'success');
       } catch (err) {
-        showToast('Gagal membaca file Excel', 'error');
+        console.error('Import error:', err);
+        showToast(err.message || 'Gagal mengimpor file: Format kolom salah', 'error');
       }
       e.target.value = null;
     };
@@ -423,26 +490,74 @@ export default function SalesView({
         const wb = XLSX.read(evt.target.result, { type: 'binary' });
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         if (!rows.length) { showToast('File kosong', 'error'); return; }
-        let ok = 0, fail = 0;
+        const payloads = [];
         for (const row of rows) {
           const contract = contracts.find(c => c.nomor_kontrak === String(row.nomor_kontrak || '').trim());
-          if (!contract) { fail++; continue; }
+          if (!contract) throw new Error(`Kontrak ${row.nomor_kontrak} tidak ditemukan.`);
           let tglVal = row.tgl_bayar;
           if (typeof tglVal === 'number') tglVal = new Date((tglVal - 25569) * 86400000).toISOString().split('T')[0];
           else tglVal = String(tglVal || '').trim();
-          try {
-            await onAddPayment({
-              kontrak_penjualan_id: contract.id,
-              nominal: parseFloat(String(row.nominal || '0').replace(/[^0-9.]/g, '')),
-              tgl_bayar: tglVal,
-              catatan: row.catatan || ''
-            });
-            ok++;
-          } catch { fail++; }
+          
+          payloads.push({
+            kontrak_penjualan_id: contract.id,
+            nominal: parseFloat(String(row.nominal || '0').replace(/[^0-9.]/g, '')),
+            tgl_bayar: tglVal,
+            catatan: row.catatan || ''
+          });
         }
-        showToast(`Import pembayaran: ${ok} berhasil${fail > 0 ? `, ${fail} gagal` : ''}`, fail > 0 ? 'error' : 'success');
+        
+        await onBulkAddPayment(payloads);
+        showToast(`Import pembayaran: ${payloads.length} baris berhasil diproses`, 'success');
       } catch (err) {
-        showToast('Gagal membaca file Excel', 'error');
+        showToast(err.message || 'Gagal membaca file Excel', 'error');
+      }
+      e.target.value = null;
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleImportLevyDuty = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        if (!rows.length) { showToast('File kosong', 'error'); return; }
+        const payloads = [];
+        
+        // Buat map invoice_number -> invoice_id dengan menelusuri pengiriman_penjualans
+        const invoiceMap = {};
+        shipments.forEach(s => {
+          if (s.invoices && s.invoices.length > 0) {
+            s.invoices.forEach(inv => {
+              invoiceMap[inv.nomor_invoice] = inv.id;
+            });
+          }
+        });
+
+        for (const row of rows) {
+          const invId = invoiceMap[String(row.nomor_invoice || '').trim()];
+          if (!invId) throw new Error(`Invoice ${row.nomor_invoice} tidak ditemukan.`);
+          
+          let t = parseFloat(row.tarif || 0);
+          let k = parseFloat(row.kurs || 0);
+          let na = row.nilai_akhir !== undefined ? parseFloat(row.nilai_akhir) : (t * k);
+          
+          payloads.push({
+            invoice_id: invId,
+            kapal: row.kapal || '',
+            tarif: t,
+            kurs: k,
+            nilai_akhir: na
+          });
+        }
+        
+        await onBulkAddLevyDuty(payloads);
+        showToast(`Import Levy Duty: ${payloads.length} baris berhasil diproses`, 'success');
+      } catch (err) {
+        showToast(err.message || 'Gagal membaca file Excel', 'error');
       }
       e.target.value = null;
     };
@@ -538,6 +653,9 @@ export default function SalesView({
         <button onClick={() => setActiveTab('payments')} className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
           activeTab === 'payments' ? 'border-teal-500 text-teal-400' : 'border-transparent text-slate-400 hover:text-white'
         }`}>Daftar Penerimaan Pembayaran</button>
+        <button onClick={() => setActiveTab('levyduties')} className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all ${
+          activeTab === 'levyduties' ? 'border-teal-500 text-teal-400' : 'border-transparent text-slate-400 hover:text-white'
+        }`}>Pembayaran Levy Duty</button>
       </div>
 
       {/* Tab: Dashboard Sales */}
@@ -553,9 +671,9 @@ export default function SalesView({
               </div>
             </div>
             <div className="flex items-center space-x-3">
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+              <CustomDateInput value={startDate} onChange={setStartDate} className="w-32" />
               <span className="text-slate-500 font-bold">s/d</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+              <CustomDateInput value={endDate} onChange={setEndDate} className="w-32" />
             </div>
           </div>
 
@@ -719,7 +837,7 @@ export default function SalesView({
                 <tbody className="divide-y divide-slate-800/60">
                   {paginatedContracts.map((c) => {
                     const outstanding = Math.max(0, c.qty - c.total_terkirim);
-                    const outstandingPayment = Math.max(0, (c.qty * c.harga_satuan) - c.total_terbayar);
+                    const outstandingPayment = (c.qty * c.harga_satuan) - c.total_terbayar;
                     return (
                       <tr key={c.id} className="hover:bg-slate-900/40 transition-colors align-middle">
                         <td className="py-3 px-4 font-bold text-white">{c.nomor_kontrak}</td>
@@ -733,8 +851,8 @@ export default function SalesView({
                           <span className={outstanding > 0 ? 'text-amber-400' : 'text-slate-500'}>{outstanding.toLocaleString('id-ID')}</span>
                         </td>
                         <td className="py-3 px-4 text-right text-teal-300 font-bold">{formatRupiah(c.total_terbayar)}</td>
-                        <td className="py-3 px-4 text-right font-bold">
-                          <span className={outstandingPayment > 0 ? 'text-rose-400' : 'text-slate-500'}>{formatRupiah(outstandingPayment)}</span>
+                        <td className="py-3 px-4 text-right font-bold whitespace-nowrap">
+                          <span className={outstandingPayment > 0 ? 'text-rose-400' : 'text-emerald-400'}>{formatRupiah(outstandingPayment)}</span>
                         </td>
                         <td className="py-3 px-4 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
@@ -778,10 +896,9 @@ export default function SalesView({
         <div className="space-y-4">
           {/* Filter bar */}
           <div className="flex flex-wrap items-center gap-2 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
-            <Calendar className="h-4 w-4 text-teal-400 shrink-0" />
-            <input type="date" value={shipFilterStart} onChange={e => { setShipFilterStart(e.target.value); setShipmentPage(1); }} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+            <CustomDateInput value={shipFilterStart} onChange={setShipFilterStart} className="w-32" />
             <span className="text-slate-500 font-bold text-xs">s/d</span>
-            <input type="date" value={shipFilterEnd} onChange={e => { setShipFilterEnd(e.target.value); setShipmentPage(1); }} className="px-3 py-1.5 rounded-lg glass-input text-xs" />
+            <CustomDateInput value={shipFilterEnd} onChange={setShipFilterEnd} className="w-32" />
             <select value={shipFilterStatus} onChange={e => { setShipFilterStatus(e.target.value); setShipmentPage(1); }} className="px-3 py-1.5 rounded-lg glass-input text-xs">
               <option value="">Semua Status</option>
               <option value="Proses">Proses</option>
@@ -811,6 +928,8 @@ export default function SalesView({
                     <th className="py-3 px-4">Produk</th>
                     <th className="py-3 px-4 text-right">Qty Kirim</th>
                     <th className="py-3 px-4 text-right">Qty Terima</th>
+                    <th className="py-3 px-4 text-right text-rose-400">Outstanding Kirim</th>
+                    <th className="py-3 px-4 text-right text-amber-400">Outstanding Bayar</th>
                     <th className="py-3 px-4">Ekspedisi (Via)</th>
                     <th className="py-3 px-4">Incoterm</th>
                     <th className="py-3 px-4">Termin</th>
@@ -823,6 +942,9 @@ export default function SalesView({
                 <tbody className="divide-y divide-slate-800/60">
                   {paginatedShipments.map((s) => {
                     const invoice = s.invoices?.[0];
+                    const contract = s.kontrak_penjualan;
+                    const outstandingShipment = contract ? Math.max(0, parseFloat(contract.qty || 0) - parseFloat(contract.total_terkirim || 0)) : 0;
+                    const outstandingPayment = contract ? Math.max(0, parseFloat(contract.total_nilai_kontrak || 0) - parseFloat(contract.total_terbayar || 0)) : 0;
                     return (
                       <tr key={s.id} className="hover:bg-slate-900/40 transition-colors align-middle">
                         <td className="py-3 px-4 text-slate-400 font-semibold">{s.tgl ? new Date(s.tgl).toLocaleDateString('id-ID') : '-'}</td>
@@ -831,15 +953,26 @@ export default function SalesView({
                         <td className="py-3 px-4 text-teal-400 font-bold">{s.kontrak_penjualan?.produk?.nama_produk ?? 'N/A'}</td>
                         <td className="py-3 px-4 text-right text-white font-black">{parseFloat(s.qty_kirim).toLocaleString('id-ID')}</td>
                         <td className="py-3 px-4 text-right text-emerald-400 font-bold">{parseFloat(s.qty_terima || s.qty_kirim).toLocaleString('id-ID')}</td>
+                        <td className="py-3 px-4 text-right font-extrabold">
+                          <span className={outstandingShipment > 0 ? 'text-rose-400' : 'text-slate-500'}>{outstandingShipment.toLocaleString('id-ID')}</span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-extrabold">
+                          <span className={outstandingPayment > 0 ? 'text-amber-400' : 'text-slate-500'}>{formatRupiah(outstandingPayment)}</span>
+                        </td>
                         <td className="py-3 px-4 text-slate-400 font-semibold">{s.via ?? '-'}</td>
                         <td className="py-3 px-4 text-slate-400 font-mono">{s.incoterm ?? 'LOCO'}</td>
                         <td className="py-3 px-4 text-slate-500 font-bold">{s.termin ?? 'CAD'}</td>
                         <td className="py-3 px-4 text-slate-300 font-mono text-[11px]">{invoice?.nomor_invoice ?? '-'}</td>
                         <td className="py-3 px-4 text-right text-amber-400 font-black">{invoice?.nilai ? formatRupiah(invoice.nilai) : '-'}</td>
                         <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                            s.status === 'Selesai' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
-                          }`}>{s.status}</span>
+                          <button 
+                            onClick={() => onUpdateShipment(s.id, { ...s, status: s.status === 'Selesai' ? 'Proses' : 'Selesai', kontrak_penjualan_id: s.kontrak_penjualan_id })}
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition-all hover:scale-105 cursor-pointer ${
+                              s.status === 'Selesai' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20'
+                            }`}
+                          >
+                            {s.status}
+                          </button>
                         </td>
                         <td className="py-3 px-4 text-center">
                           <div className="flex items-center justify-center space-x-1">
@@ -851,7 +984,7 @@ export default function SalesView({
                     );
                   })}
                   {paginatedShipments.length === 0 && (
-                    <tr><td colSpan={13} className="py-8 text-center text-slate-500 italic">Belum ada data pengiriman</td></tr>
+                    <tr><td colSpan={15} className="py-8 text-center text-slate-500 italic">Belum ada data pengiriman</td></tr>
                   )}
                 </tbody>
               </table>
@@ -929,6 +1062,74 @@ export default function SalesView({
                   <button onClick={() => setPaymentPage(p => Math.max(1, p - 1))} disabled={paymentPage === 1} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
                   <span className="text-white font-bold">Hal {paymentPage} / {Math.ceil(payments.length / ITEMS_PER_PAGE)}</span>
                   <button onClick={() => setPaymentPage(p => Math.min(Math.ceil(payments.length / ITEMS_PER_PAGE), p + 1))} disabled={paymentPage === Math.ceil(payments.length / ITEMS_PER_PAGE)} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
+                </div>
+              </div>
+            )}
+          </GlassCard>
+        </div>
+    )}
+
+      {/* Tab: Pembayaran Levy Duty */}
+      {activeTab === 'levyduties' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
+            <span className="text-xs text-slate-400 font-bold">Daftar Pembayaran Levy Duty</span>
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={downloadLevyDutyTemplate} className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors">
+                <Download className="h-3.5 w-3.5" /><span>Template Excel</span>
+              </button>
+              <label className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors cursor-pointer">
+                <Upload className="h-3.5 w-3.5" /><span>Import Excel</span>
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImportLevyDuty} className="hidden" />
+              </label>
+              <button onClick={() => { setSelectedItem(null); setLevyDutyForm({ invoice_id: '', kapal: '', tarif: '', kurs: '', nilai_akhir: '' }); setActiveModal('add_levyduty'); }} className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg glass-button-primary text-xs font-bold">
+                <Plus className="h-3.5 w-3.5" /><span>Catat Levy Duty</span>
+              </button>
+            </div>
+          </div>
+          <GlassCard className="overflow-hidden" hover={false}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
+                    <th className="py-3 px-4">Invoice</th>
+                    <th className="py-3 px-4">Kapal</th>
+                    <th className="py-3 px-4 text-right">Tarif</th>
+                    <th className="py-3 px-4 text-right">Kurs</th>
+                    <th className="py-3 px-4 text-right">Nilai Akhir</th>
+                    <th className="py-3 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {paginatedLevyDuties.map((l) => (
+                    <tr key={l.id} className="hover:bg-slate-900/40 transition-colors align-middle">
+                      <td className="py-3 px-4 font-bold text-white">{l.invoice?.nomor_invoice ?? 'N/A'}</td>
+                      <td className="py-3 px-4 font-semibold text-slate-350">{l.kapal ?? '-'}</td>
+                      <td className="py-3 px-4 text-right text-emerald-450 font-bold">{parseFloat(l.tarif).toLocaleString('id-ID')}</td>
+                      <td className="py-3 px-4 text-right text-emerald-450 font-bold">{parseFloat(l.kurs).toLocaleString('id-ID')}</td>
+                      <td className="py-3 px-4 text-right text-teal-400 font-black">{formatRupiah(l.nilai_akhir)}</td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center space-x-1">
+                          <button onClick={() => { setSelectedItem(l); setLevyDutyForm({ invoice_id: l.invoice_id, kapal: l.kapal, tarif: l.tarif, kurs: l.kurs, nilai_akhir: l.nilai_akhir }); setActiveModal('edit_levyduty'); }} className="p-1 rounded bg-slate-900 text-slate-400 hover:text-teal-400 border border-slate-800 transition-colors"><Edit className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => triggerDelete('levy_duty', l)} className="p-1 rounded bg-slate-900 text-slate-400 hover:text-red-400 border border-slate-800 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {paginatedLevyDuties.length === 0 && (
+                    <tr><td colSpan={6} className="py-8 text-center text-slate-500 italic">Belum ada pembayaran Levy Duty</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* Pagination */}
+            {levyDuties.length > ITEMS_PER_PAGE && (
+              <div className="flex items-center justify-between p-4 border-t border-slate-800 text-xs">
+                <span className="text-slate-400 font-bold">Total {levyDuties.length} transaksi</span>
+                <div className="flex items-center space-x-2">
+                  <button onClick={() => setLevyDutyPage(p => Math.max(1, p - 1))} disabled={levyDutyPage === 1} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
+                  <span className="text-white font-bold">Hal {levyDutyPage} / {Math.ceil(levyDuties.length / ITEMS_PER_PAGE)}</span>
+                  <button onClick={() => setLevyDutyPage(p => Math.min(Math.ceil(levyDuties.length / ITEMS_PER_PAGE), p + 1))} disabled={levyDutyPage === Math.ceil(levyDuties.length / ITEMS_PER_PAGE)} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
             )}
@@ -1077,6 +1278,15 @@ export default function SalesView({
                   <input type="date" required value={shipmentForm.tgl} onChange={e => setShipmentForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
                 </div>
               </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Status Pengiriman</label>
+                  <select value={shipmentForm.status} onChange={e => setShipmentForm(prev => ({ ...prev, status: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
+                    <option value="Proses">Proses</option>
+                    <option value="Selesai">Selesai</option>
+                  </select>
+                </div>
+              </div>
 
               {!selectedItem && (
                 <div className="bg-slate-950/40 p-3.5 border border-slate-900 rounded-xl space-y-3">
@@ -1085,9 +1295,15 @@ export default function SalesView({
                     <label htmlFor="create_invoice" className="text-[10px] font-bold text-teal-400 uppercase tracking-wider select-none">Hasilkan Invoice Penjualan Sekaligus?</label>
                   </div>
                   {shipmentForm.create_invoice && (
-                    <div>
-                      <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nomor Invoice</label>
-                      <input type="text" required placeholder="Contoh: INV-SALES-001" value={shipmentForm.nomor_invoice} onChange={e => setShipmentForm(prev => ({ ...prev, nomor_invoice: e.target.value }))} className="w-full px-3 py-2 rounded-lg glass-input text-xs bg-slate-900 text-white" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nomor Invoice</label>
+                        <input type="text" required placeholder="Contoh: INV-SALES-001" value={shipmentForm.nomor_invoice} onChange={e => setShipmentForm(prev => ({ ...prev, nomor_invoice: e.target.value }))} className="w-full px-3 py-2 rounded-lg glass-input text-xs bg-slate-900 text-white" />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nilai Invoice (Opsional)</label>
+                        <input type="number" placeholder="Otomatis Dihitung" value={shipmentForm.nilai_invoice} onChange={e => setShipmentForm(prev => ({ ...prev, nilai_invoice: e.target.value }))} className="w-full px-3 py-2 rounded-lg glass-input text-xs bg-slate-900 text-white" />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1167,16 +1383,94 @@ export default function SalesView({
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Target Qty Penjualan (Kg)</label>
-                <input type="number" required placeholder="Contoh: 1500000" value={targetForm.target_qty} onChange={e => setTargetForm(prev => ({ ...prev, target_qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+                <input type="text" required placeholder="Contoh: 1.500.000" value={targetForm.target_qty ? Number(targetForm.target_qty).toLocaleString('id-ID') : ''} onChange={e => { const val = e.target.value.replace(/\D/g, ''); setTargetForm(prev => ({ ...prev, target_qty: val ? parseInt(val, 10) : '' })); }} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
               </div>
               <div className="flex space-x-3 pt-4">
-                <button type="submit" className="flex-1 py-3 rounded-xl glass-button-primary text-xs font-bold">Simpan Target</button>
-                <button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold hover:text-white transition-colors">Batal</button>
+                <button 
+                  type="submit" 
+                  disabled={isLoading}
+                  className="flex-1 py-3 rounded-xl glass-button-primary text-xs font-bold flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <span>{isLoading ? 'Menyimpan...' : 'Simpan Target'}</span>
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setActiveModal(null)}
+                  disabled={isLoading}
+                  className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Batal
+                </button>
               </div>
             </form>
           </GlassCard>
         </div>
       )}
+      {/* Modal: Levy Duty */}
+      {(activeModal === 'add_levyduty' || activeModal === 'edit_levyduty') && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9990]">
+          <GlassCard className="w-full max-w-md border-teal-500/20" hover={false}>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">
+                {activeModal === 'edit_levyduty' ? 'Edit Levy Duty' : 'Catat Levy Duty'}
+              </h3>
+              <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-white transition-colors"><X className="h-5 w-5" /></button>
+            </div>
+            <form onSubmit={handleLevyDutySubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pilih Invoice</label>
+                <select 
+                  required 
+                  value={levyDutyForm.invoice_id} 
+                  onChange={e => setLevyDutyForm(prev => ({ ...prev, invoice_id: e.target.value }))} 
+                  className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white"
+                >
+                  <option value="">Pilih Invoice</option>
+                  {shipments.flatMap(s => s.invoices || []).map(inv => (
+                    <option key={inv.id} value={inv.id}>{inv.nomor_invoice} (Pengiriman: {inv.pengiriman_penjualan?.kontrak_penjualan?.nomor_kontrak || 'N/A'})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kapal (Opsional)</label>
+                <input type="text" placeholder="Contoh: MT. GLORY" value={levyDutyForm.kapal} onChange={e => setLevyDutyForm(prev => ({ ...prev, kapal: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tarif (USD/Ton)</label>
+                  <input type="number" step="0.01" required value={levyDutyForm.tarif} onChange={e => {
+                    const tarif = e.target.value;
+                    const kurs = levyDutyForm.kurs || 0;
+                    setLevyDutyForm(prev => ({ ...prev, tarif, nilai_akhir: (parseFloat(tarif || 0) * parseFloat(kurs || 0)) }));
+                  }} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kurs (Rp)</label>
+                  <input type="number" step="0.01" required value={levyDutyForm.kurs} onChange={e => {
+                    const kurs = e.target.value;
+                    const tarif = levyDutyForm.tarif || 0;
+                    setLevyDutyForm(prev => ({ ...prev, kurs, nilai_akhir: (parseFloat(tarif || 0) * parseFloat(kurs || 0)) }));
+                  }} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nilai Akhir (Rp)</label>
+                <input type="number" step="0.01" required value={levyDutyForm.nilai_akhir} onChange={e => setLevyDutyForm(prev => ({ ...prev, nilai_akhir: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+              </div>
+              
+              <div className="flex space-x-3 pt-4">
+                <button type="submit" disabled={isLoading} className="flex-1 py-3 rounded-xl glass-button-primary text-xs font-bold flex items-center justify-center space-x-2 disabled:opacity-50">
+                  {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <span>{isLoading ? 'Menyimpan...' : 'Simpan Levy Duty'}</span>
+                </button>
+                <button type="button" onClick={() => setActiveModal(null)} disabled={isLoading} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold hover:text-white transition-colors disabled:opacity-50">Batal</button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
     </div>
   );
 }

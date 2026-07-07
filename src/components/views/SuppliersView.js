@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import GlassCard from '../GlassCard';
 import { Search, UserPlus, User, FileText, Trash2, Edit, Download, Upload, CheckCircle, AlertTriangle, X } from 'lucide-react';
 
-export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) {
+export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete, onBulkAddSupplier }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
@@ -88,31 +88,33 @@ export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) 
         const worksheet = workbook.Sheets[firstSheetName];
         const sheetData = XLSX.utils.sheet_to_json(worksheet);
 
-        let successCount = 0;
-        let skippedCount = 0;
+        const payloads = [];
 
-        sheetData.forEach(row => {
+        for (const row of sheetData) {
           const rawName = row.nama_supplier || '';
-          if (!rawName.trim()) return;
+          if (!rawName.trim()) throw new Error('Nama supplier kosong pada salah satu baris');
 
           const isDuplicate = suppliers.some(s => s.nama.trim().toLowerCase() === rawName.trim().toLowerCase());
           
-          if (isDuplicate) {
-            skippedCount++;
-          } else {
-            onAdd({ nama: rawName.trim() });
-            successCount++;
+          if (!isDuplicate) {
+            payloads.push({ nama: rawName.trim() });
           }
-        });
-
-        if (skippedCount > 0) {
-          showToast(`Impor sukses: ${successCount} ditambahkan, ${skippedCount} dilewati karena duplikat`, 'error');
+        }
+        
+        const skippedCount = sheetData.length - payloads.length;
+        
+        if (payloads.length > 0) {
+          onBulkAddSupplier(payloads).then(() => {
+            showToast(`Import berhasil: ${payloads.length} ditambahkan${skippedCount > 0 ? `, ${skippedCount} dilewati (duplikat)` : ''}`, 'success');
+          }).catch(err => {
+            showToast(err.message || 'Gagal menyimpan bulk import', 'error');
+          });
         } else {
-          showToast(`Berhasil mengimpor ${successCount} supplier baru!`, 'success');
+          showToast(`Tidak ada data baru yang ditambahkan. ${skippedCount} dilewati (duplikat)`, 'error');
         }
       } catch (err) {
-        console.error(err);
-        showToast('Gagal mengimpor file Excel.', 'error');
+        console.error('Import error:', err);
+        showToast(err.message || 'Gagal mengimpor file Excel.', 'error');
       }
       e.target.value = null;
     };

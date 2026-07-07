@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import GlassCard from '../GlassCard';
+import CustomDateInput from '../ui/CustomDateInput';
 import { 
   FileText, 
   ArrowDownLeft, 
@@ -53,16 +54,25 @@ export default function DashboardView({
   onUpdateDailyTarget,
   onDeleteDailyTarget
 }) {
+  const getLocalDateString = (offsetDays = 0) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+  };
+
   // Local filter states for Contracts
   const [contractSearch, setContractSearch] = useState('');
-  const [contractStatusFilter, setContractStatusFilter] = useState('live'); 
+  const [contractStatusFilter, setContractStatusFilter] = useState('live'); // 'live', 'closed', 'all'
+  const [contractStartDate, setContractStartDate] = useState(() => getLocalDateString(-30));
+  const [contractEndDate, setContractEndDate] = useState(() => getLocalDateString(0));
 
   // Pagination states
   const [contractPage, setContractPage] = useState(1);
   const [incomingPage, setIncomingPage] = useState(1);
   const itemsPerPage = 5;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(0);
 
   // Chart Scale State: 'harian' (Daily), 'mingguan' (Weekly), 'bulanan' (Monthly)
   const [chartScale, setChartScale] = useState('harian');
@@ -107,10 +117,12 @@ export default function DashboardView({
   };
 
   const formatNumberInput = (value) => {
-    if (value === undefined || value === null) return '';
-    const raw = String(value).replace(/\D+/g, '');
-    if (raw === '') return '';
-    return parseInt(raw, 10).toLocaleString('id-ID');
+    if (value === undefined || value === null || value === '') return '';
+    const raw = String(value).replace(/[^\d.]/g, '');
+    if (!raw) return '';
+    const parts = raw.split('.');
+    parts[0] = parseInt(parts[0], 10).toLocaleString('id-ID');
+    return parts.join(',');
   };
 
   const parseNumberInput = (value) => {
@@ -462,7 +474,7 @@ export default function DashboardView({
             ...prev,
             pembayaran_cpos: updatedPayments,
             total_terbayar: totalPaid,
-            outstanding_nominal: Math.max(0, totalVal - totalPaid)
+            outstanding_nominal: totalVal - totalPaid
           }));
         }
         showToast('Pembayaran berhasil dihapus', 'success');
@@ -473,8 +485,20 @@ export default function DashboardView({
   // Filter Contracts based on Status and Search query
   const filteredContracts = useMemo(() => {
     return contracts.filter(c => {
-      if (contractStatusFilter === 'live' && c.is_closed) return false;
-      if (contractStatusFilter === 'closed' && !c.is_closed) return false;
+      // For live contracts, show all (don't filter by date)
+      // For closed contracts and "all" view, apply date filter
+      const isLive = contractStatusFilter === 'live';
+      const shouldShow = contractStatusFilter === 'all' || 
+                        (contractStatusFilter === 'live' && !c.is_closed) ||
+                        (contractStatusFilter === 'closed' && c.is_closed);
+      
+      if (!shouldShow) return false;
+
+      // Apply date filter for 'all' and 'closed' views
+      if (!isLive) {
+        const cDate = c.tgl_kontrak?.split('T')[0] || '';
+        if (cDate < contractStartDate || cDate > contractEndDate) return false;
+      }
 
       const query = contractSearch.toLowerCase();
       const contractNo = c.nomor_kontrak ? c.nomor_kontrak.toLowerCase() : '';
@@ -482,7 +506,7 @@ export default function DashboardView({
       
       return contractNo.includes(query) || supplierName.includes(query);
     });
-  }, [contracts, contractSearch, contractStatusFilter]);
+  }, [contracts, contractSearch, contractStatusFilter, contractStartDate, contractEndDate]);
 
   // CPO Contracts Pagination
   const totalContractPages = Math.ceil(filteredContracts.length / itemsPerPage) || 1;
@@ -498,7 +522,7 @@ export default function DashboardView({
     return (data.incoming_logs || []).slice(startIndex, startIndex + itemsPerPage);
   }, [data.incoming_logs, incomingPage]);
 
-  const cpoTanks = storages.filter(s => s.jenis === 'tangki' && s.stok.some(st => st.kode_produk === 'CPO'));
+  const cpoTanks = storages.filter(s => s.jenis === 'tangki' && (s.stok || []).some(st => st.kode_produk === 'CPO' || (st.produk && st.produk.kode_produk === 'CPO')));
 
   // Calculate Weighted Average Price and total valuation for each CPO Tank based on its contracts
   const cpoTanksValuation = useMemo(() => {
@@ -958,6 +982,15 @@ export default function DashboardView({
               <option value="all">Status: Semua Kontrak</option>
             </select>
 
+            {/* Date Filters (Only for Closed or All) */}
+            {contractStatusFilter !== 'live' && (
+              <div className="flex items-center space-x-2 animate-fade-in bg-slate-900/50 p-1 rounded-lg border border-slate-800">
+                <CustomDateInput value={contractStartDate} onChange={setContractStartDate} className="w-28" />
+                <span className="text-[10px] text-slate-500 font-bold">-</span>
+                <CustomDateInput value={contractEndDate} onChange={setContractEndDate} className="w-28" />
+              </div>
+            )}
+
             {/* Excel Template & Import buttons */}
             <div className="flex items-center space-x-1.5">
               <button 
@@ -1005,6 +1038,7 @@ export default function DashboardView({
                 <th className="py-3 px-4">Supplier</th>
                 <th className="py-3 px-4 text-right">Volume (Kg)</th>
                 <th className="py-3 px-4 text-right">Harga / Kg</th>
+                <th className="py-3 px-4 text-right">Total Nilai</th>
                 <th className="py-3 px-4 text-right">Outstanding Bayar</th>
                 <th className="py-3 px-4 text-center">CAD/CBD</th>
                 <th className="py-3 px-4 text-right">Outstanding Kirim (Kg)</th>
@@ -1022,8 +1056,13 @@ export default function DashboardView({
                     {Math.round(c.qty).toLocaleString('id-ID')}
                   </td>
                   <td className="py-3.5 px-4 text-right">{formatRupiah(c.harga_per_kg)}</td>
-                  <td className="py-3.5 px-4 text-right font-extrabold text-amber-400">
-                    {formatRupiah(c.outstanding_nominal)}
+                  <td className="py-3.5 px-4 text-right font-extrabold text-emerald-400">
+                    {formatRupiah(c.qty * c.harga_per_kg)}
+                  </td>
+                  <td className="py-3.5 px-4 text-right font-extrabold">
+                    <span className={c.outstanding_nominal < 0 ? 'text-teal-400' : 'text-amber-400'}>
+                      {formatRupiah(c.outstanding_nominal)}
+                    </span>
                   </td>
                   <td className="py-3.5 px-4 text-center">
                     <span className="bg-slate-900 px-2 py-0.5 rounded text-[10px] text-slate-400 border border-slate-800 uppercase font-black">

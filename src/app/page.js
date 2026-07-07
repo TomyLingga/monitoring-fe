@@ -8,6 +8,8 @@ import MasterDataView from '@/components/views/MasterDataView';
 import ProductionView from '@/components/views/ProductionView';
 import StokView from '@/components/views/StokView';
 import SalesView from '@/components/views/SalesView';
+import LogisticsView from '@/components/views/LogisticsView';
+import FinanceView from '@/components/views/FinanceView';
 import { apiCall } from '@/utils/api';
 import { ShieldCheck, LogIn, Lock, Mail, AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -27,15 +29,18 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [theme, setTheme] = useState('dark');
   
-  const getThirtyDaysAgo = () => {
+  const getLocalDateString = (offsetDays = 0) => {
     const d = new Date();
-    d.setDate(d.getDate() - 30);
+    d.setDate(d.getDate() + offsetDays);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
     return d.toISOString().split('T')[0];
   };
-  const getTodayStr = () => new Date().toISOString().split('T')[0];
 
-  const [startDate, setStartDate] = useState(getThirtyDaysAgo());
-  const [endDate, setEndDate] = useState(getTodayStr());
+  const getThirtyDaysAgo = () => getLocalDateString(-30);
+  const getTodayStr = () => getLocalDateString(0);
+
+  const [startDate, setStartDate] = useState(() => getThirtyDaysAgo());
+  const [endDate, setEndDate] = useState(() => getTodayStr());
 
   // Master Data & Dashboard State (Local variables to enable instant reactivity)
   const [dashboardData, setDashboardData] = useState(null);
@@ -51,18 +56,37 @@ export default function Home() {
   const [pengirimanPenjualans, setPengirimanPenjualans] = useState([]);
   const [pembayaranPenjualans, setPembayaranPenjualans] = useState([]);
   const [dailySalesTargets, setDailySalesTargets] = useState([]);
+  const [levyDuties, setLevyDuties] = useState([]);
 
   // Sales Date Filter State
-  const [salesStartDate, setSalesStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; });
-  const [salesEndDate, setSalesEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [salesStartDate, setSalesStartDate] = useState(() => getThirtyDaysAgo());
+  const [salesEndDate, setSalesEndDate] = useState(() => getTodayStr());
 
   // Production State
-  const [prodStartDate, setProdStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; });
-  const [prodEndDate, setProdEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [prodStartDate, setProdStartDate] = useState(() => getThirtyDaysAgo());
+  const [prodEndDate, setProdEndDate] = useState(() => getTodayStr());
   const [prosesRefineries, setProsesRefineries] = useState([]);
   const [prosesFraksinasis, setProsesFraksinasis] = useState([]);
   const [prosesPackagings, setProsesPackagings] = useState([]);
   const [dailyProductionTargets, setDailyProductionTargets] = useState([]);
+
+  // Logistics State
+  const [logisticsStartDate, setLogisticsStartDate] = useState(() => getThirtyDaysAgo());
+  const [logisticsEndDate, setLogisticsEndDate] = useState(() => getTodayStr());
+  const [truckings, setTruckings] = useState([]);
+  const [logisticPeTargets, setLogisticPeTargets] = useState([]);
+  const [logisticAdditionalPes, setLogisticAdditionalPes] = useState([]);
+  const [logisticPeUsages, setLogisticPeUsages] = useState([]);
+
+  // Finance State
+  const [financeStartDate, setFinanceStartDate] = useState(() => getThirtyDaysAgo());
+  const [financeEndDate, setFinanceEndDate] = useState(() => getTodayStr());
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [balances, setBalances] = useState([]);
+  const [balanceChartData, setBalanceChartData] = useState([]);
+  const [bankTransactions, setBankTransactions] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [kursData, setKursData] = useState({ uka: [], jisdor: [] });
 
   // Sync to prevent NextJS hydration errors
   useEffect(() => {
@@ -82,94 +106,146 @@ export default function Home() {
 
   // Sync theme class on <html> whenever theme changes
   useEffect(() => {
-    document.documentElement.classList.toggle('light', theme === 'light');
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     document.documentElement.style.colorScheme = theme;
     localStorage.setItem('cpo_theme', theme);
   }, [theme]);
 
-  // Fetch all app data from API
-  const fetchAllData = useCallback(async (start = startDate, end = endDate) => {
+  // Fetch data specific to the active tab
+  const loadDataForTab = useCallback(async (tab = currentTab) => {
+    if (!user) return;
     setIsRefreshing(true);
     try {
-      const [
-        dash, sups, stores, prods, ctrs, targets, prodStocks,
-        custs, sCtrs, sShips, sPays, sTargets
-      ] = await Promise.all([
-        apiCall(`/dashboard?start_date=${start}&end_date=${end}`),
-        apiCall('/suppliers'),
-        apiCall('/storages'),
-        apiCall('/master-produks'),
-        apiCall('/kontrak-cpos'),
-        apiCall('/daily-targets'),
-        apiCall('/stok-produks'),
-        apiCall('/buyers'),
-        apiCall('/kontrak-penjualans'),
-        apiCall(`/pengiriman-penjualans?start_date=${salesStartDate}&end_date=${salesEndDate}`),
-        apiCall('/pembayaran-penjualans'),
-        apiCall(`/daily-sales-targets?start_date=${salesStartDate}&end_date=${salesEndDate}`)
-      ]);
-
-      // Align state
-      setSuppliers(sups);
-      setProducts(prods);
-      setContracts(ctrs);
-      setDailyTargets(Array.isArray(targets) ? targets : []);
-      setDailySalesTargets(Array.isArray(sTargets) ? sTargets : []);
-      setStocks(Array.isArray(prodStocks) ? prodStocks : []);
-      setBuyers(Array.isArray(custs) ? custs : []);
-      setKontrakPenjualans(Array.isArray(sCtrs) ? sCtrs : []);
-      setPengirimanPenjualans(Array.isArray(sShips) ? sShips : []);
-      setPembayaranPenjualans(Array.isArray(sPays) ? sPays : []);
-
-      // Extract storages from dashboardData to have details of stok, terisi, and persentase
-      const mergedStorages = stores.map(store => {
-        const liveInfo = (dash.storages || []).find(s => s.id === store.id);
-        return {
-          ...store,
-          stok: liveInfo ? liveInfo.stok : [],
-          terisi: liveInfo ? liveInfo.terisi : 0,
-          persentase: liveInfo ? liveInfo.persentase : 0
-        };
-      });
-      setStorages(mergedStorages);
-
-      setIncomingLogs(dash.incoming_logs || []);
-
-      setDashboardData(dash);
+      if (tab === 'dashboard') {
+        const [dash, sups, stores, prods, ctrs, targets] = await Promise.all([
+          apiCall(`/dashboard?start_date=${startDate}&end_date=${endDate}`),
+          apiCall('/suppliers'),
+          apiCall('/storages'),
+          apiCall('/master-produks'),
+          apiCall('/kontrak-cpos'),
+          apiCall('/daily-targets')
+        ]);
+        setSuppliers(Array.isArray(sups) ? sups : []);
+        setProducts(Array.isArray(prods) ? prods : []);
+        setContracts(Array.isArray(ctrs) ? ctrs : []);
+        setDailyTargets(Array.isArray(targets) ? targets : []);
+        const mergedStorages = (Array.isArray(stores) ? stores : []).map(store => {
+          const liveInfo = (dash?.storages || []).find(s => s.id === store.id);
+          return { ...store, stok: liveInfo?.stok || [], terisi: liveInfo?.terisi || 0, persentase: liveInfo?.persentase || 0 };
+        });
+        setStorages(mergedStorages);
+        setIncomingLogs(dash?.incoming_logs || []);
+        setDashboardData(dash);
+      } 
+      else if (tab === 'produksi') {
+        const [refs, fraks, packs, prodTargets, stores, prods] = await Promise.all([
+          apiCall(`/proses-refineries?start_date=${prodStartDate}&end_date=${prodEndDate}`),
+          apiCall(`/proses-fraksinasis?start_date=${prodStartDate}&end_date=${prodEndDate}`),
+          apiCall(`/proses-packagings?start_date=${prodStartDate}&end_date=${prodEndDate}`),
+          apiCall('/daily-production-targets'),
+          apiCall('/storages'),
+          apiCall('/master-produks')
+        ]);
+        setProsesRefineries(Array.isArray(refs) ? refs : []);
+        setProsesFraksinasis(Array.isArray(fraks) ? fraks : []);
+        setProsesPackagings(Array.isArray(packs) ? packs : []);
+        setDailyProductionTargets(Array.isArray(prodTargets) ? prodTargets : []);
+        setStorages(Array.isArray(stores) ? stores : []);
+        setProducts(Array.isArray(prods) ? prods : []);
+      } 
+      else if (tab === 'sales') {
+        const [stores, prods, custs, sCtrs, sShips, sPays, sTargets, levies] = await Promise.all([
+          apiCall('/storages'),
+          apiCall('/master-produks'),
+          apiCall('/buyers'),
+          apiCall('/kontrak-penjualans'),
+          apiCall(`/pengiriman-penjualans?start_date=${salesStartDate}&end_date=${salesEndDate}`),
+          apiCall('/pembayaran-penjualans'),
+          apiCall(`/daily-sales-targets?start_date=${salesStartDate}&end_date=${salesEndDate}`),
+          apiCall('/levy-duties')
+        ]);
+        setStorages(Array.isArray(stores) ? stores : []);
+        setProducts(Array.isArray(prods) ? prods : []);
+        setBuyers(Array.isArray(custs) ? custs : []);
+        setKontrakPenjualans(Array.isArray(sCtrs) ? sCtrs : []);
+        setPengirimanPenjualans(Array.isArray(sShips) ? sShips : []);
+        setPembayaranPenjualans(Array.isArray(sPays) ? sPays : []);
+        setDailySalesTargets(Array.isArray(sTargets) ? sTargets : []);
+        setLevyDuties(Array.isArray(levies) ? levies : []);
+      } 
+      else if (tab === 'stok') {
+        const [stores, prods, prodStocks] = await Promise.all([
+          apiCall('/storages'),
+          apiCall('/master-produks'),
+          apiCall('/stok-produks')
+        ]);
+        setStorages(Array.isArray(stores) ? stores : []);
+        setProducts(Array.isArray(prods) ? prods : []);
+        setStocks(Array.isArray(prodStocks) ? prodStocks : []);
+      } 
+      else if (tab === 'master') {
+        const [sups, stores, prods, custs, banks] = await Promise.all([
+          apiCall('/suppliers'),
+          apiCall('/storages'),
+          apiCall('/master-produks'),
+          apiCall('/buyers'),
+          apiCall('/finance/bank-accounts')
+        ]);
+        setSuppliers(Array.isArray(sups) ? sups : []);
+        setStorages(Array.isArray(stores) ? stores : []);
+        setProducts(Array.isArray(prods) ? prods : []);
+        setBuyers(Array.isArray(custs) ? custs : []);
+        setBankAccounts(Array.isArray(banks) ? banks : []);
+      }
+      else if (tab === 'logistics') {
+        const [trucks, peT, peA, peU] = await Promise.all([
+          apiCall(`/truckings?start_date=${logisticsStartDate}&end_date=${logisticsEndDate}`),
+          apiCall(`/logistic-pe-targets?start_date=${logisticsStartDate}&end_date=${logisticsEndDate}`),
+          apiCall(`/logistic-additional-pes?start_date=${logisticsStartDate}&end_date=${logisticsEndDate}`),
+          apiCall(`/logistic-pe-usages?start_date=${logisticsStartDate}&end_date=${logisticsEndDate}`)
+        ]);
+        setTruckings(Array.isArray(trucks) ? trucks : []);
+        setLogisticPeTargets(Array.isArray(peT) ? peT : []);
+        setLogisticAdditionalPes(Array.isArray(peA) ? peA : []);
+        setLogisticPeUsages(Array.isArray(peU) ? peU : []);
+      } else if (tab === 'finance') {
+        const [banks, bals, balChart, txns, pays, kursUka, kursJisdor, sups] = await Promise.all([
+          apiCall('/finance/bank-accounts'),
+          apiCall(`/finance/balances?start_date=${financeStartDate}&end_date=${financeEndDate}`),
+          apiCall(`/finance/balances?start_date=${getLocalDateString(-150)}&end_date=${getTodayStr()}`),
+          apiCall(`/finance/bank-transactions?start_date=${financeStartDate}&end_date=${financeEndDate}`),
+          apiCall(`/finance/payments?start_date=${financeStartDate}&end_date=${financeEndDate}`),
+          apiCall(`/kurs-bi/uka?mts=USD&startdate=${getLocalDateString(-150)}&enddate=${getTodayStr()}`),
+          apiCall(`/kurs-bi/jisdor?mts=USD&startDate=${getLocalDateString(-150)}&endDate=${getTodayStr()}`),
+          apiCall('/suppliers')
+        ]);
+        setBankAccounts(Array.isArray(banks) ? banks : []);
+        setBalances(Array.isArray(bals) ? bals : []);
+        setBalanceChartData(Array.isArray(balChart) ? balChart : []);
+        setBankTransactions(Array.isArray(txns) ? txns : []);
+        setPayments(Array.isArray(pays) ? pays : []);
+        setKursData({
+          uka: Array.isArray(kursUka) ? kursUka : [],
+          jisdor: Array.isArray(kursJisdor) ? kursJisdor : []
+        });
+        setSuppliers(Array.isArray(sups) ? sups : []);
+      }
     } catch (e) {
-      console.error("Data load failed, loading fallback metrics", e);
+      console.error(`Data load failed for tab ${tab}`, e);
     } finally {
       setIsRefreshing(false);
     }
-  }, [startDate, endDate]);
+  }, [user, currentTab, startDate, endDate, prodStartDate, prodEndDate, salesStartDate, salesEndDate, logisticsStartDate, logisticsEndDate, financeStartDate, financeEndDate]);
 
-  // Fetch Production Data
-  const fetchProductionData = useCallback(async (start = prodStartDate, end = prodEndDate) => {
-    try {
-      const [refs, fraks, packs, prodTargets] = await Promise.all([
-        apiCall(`/proses-refineries?start_date=${start}&end_date=${end}`),
-        apiCall(`/proses-fraksinasis?start_date=${start}&end_date=${end}`),
-        apiCall(`/proses-packagings?start_date=${start}&end_date=${end}`),
-        apiCall('/daily-production-targets'),
-      ]);
-      setProsesRefineries(Array.isArray(refs) ? refs : []);
-      setProsesFraksinasis(Array.isArray(fraks) ? fraks : []);
-      setProsesPackagings(Array.isArray(packs) ? packs : []);
-      setDailyProductionTargets(Array.isArray(prodTargets) ? prodTargets : []);
-    } catch (e) {
-      console.error('Production data fetch failed', e);
-    }
-  }, [prodStartDate, prodEndDate]);
+  // Backward compatible wrapper for legacy CRUD operations
+  const fetchAllData = useCallback(() => {
+    return loadDataForTab(currentTab);
+  }, [loadDataForTab, currentTab]);
 
+  // Auto-fetch when tab or dates change
   useEffect(() => {
-    if (user) fetchProductionData(prodStartDate, prodEndDate);
-  }, [user, fetchProductionData, prodStartDate, prodEndDate]);
-
-  useEffect(() => {
-    if (user) {
-      fetchAllData(startDate, endDate);
-    }
-  }, [user, fetchAllData, startDate, endDate, salesStartDate, salesEndDate]);
+    if (user) loadDataForTab(currentTab);
+  }, [user, currentTab, loadDataForTab]);
 
   // Recalculates metrics in local React state so that CRUD modifications are immediately visible.
   const recalculateLocalState = useCallback((updatedContracts, updatedIncoming, updatedStorages) => {
@@ -192,7 +268,7 @@ export default function Home() {
       const payments = c.pembayaran_cpos || [];
       const totalTerbayar = payments.reduce((sum, p) => sum + parseFloat(p.nominal || 0), 0);
       const totalHarga = parseFloat(c.qty) * parseFloat(c.harga_per_kg);
-      const outstandingNominal = Math.max(0, totalHarga - totalTerbayar);
+      const outstandingNominal = totalHarga - totalTerbayar;
 
       const resolvedSupplier = c.supplier || suppliers.find(s => s.id === parseInt(c.supplier_id)) || null;
 
@@ -241,7 +317,6 @@ export default function Home() {
   const handleDateFilterChange = (start, end) => {
     setStartDate(start);
     setEndDate(end);
-    fetchAllData(start, end);
   };
 
   // Auth: Login handler
@@ -907,7 +982,7 @@ export default function Home() {
                 storages={storages}
                 startDate={prodStartDate}
                 endDate={prodEndDate}
-                onDateChange={(s, e) => { setProdStartDate(s); setProdEndDate(e); fetchProductionData(s, e); }}
+                onDateChange={(s, e) => { setProdStartDate(s); setProdEndDate(e); }}
                 prosesRefineries={prosesRefineries}
                 prosesFraksinasis={prosesFraksinasis}
                 prosesPackagings={prosesPackagings}
@@ -924,6 +999,9 @@ export default function Home() {
                 onAddProductionTarget={async (p) => { try { const r = await apiCall('/daily-production-targets', { method: 'POST', body: JSON.stringify(p) }); setDailyProductionTargets(prev => [r, ...prev.filter(x => !(x.tgl?.split('T')[0] === p.tgl && x.jenis === p.jenis))]); } catch(e) { console.error(e); } }}
                 onUpdateProductionTarget={async (id, p) => { try { const r = await apiCall(`/daily-production-targets/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setDailyProductionTargets(prev => prev.map(x => x.id === id ? r : x)); } catch(e) { console.error(e); } }}
                 onDeleteProductionTarget={async (id) => { try { await apiCall(`/daily-production-targets/${id}`, { method: 'DELETE' }); setDailyProductionTargets(prev => prev.filter(x => x.id !== id)); } catch(e) { console.error(e); } }}
+                onBulkAddRefinery={async (payloads) => { await apiCall('/proses-refineries/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                onBulkAddFraksinasi={async (payloads) => { await apiCall('/proses-fraksinasis/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                onBulkAddPackaging={async (payloads) => { await apiCall('/proses-packagings/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
               />
             )}
 
@@ -953,6 +1031,13 @@ export default function Home() {
                 onAddPayment={async (p) => { const r = await apiCall('/pembayaran-penjualans', { method: 'POST', body: JSON.stringify(p) }); setPembayaranPenjualans(prev => [r, ...prev]); await fetchAllData(); }}
                 onUpdatePayment={async (id, p) => { const r = await apiCall(`/pembayaran-penjualans/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setPembayaranPenjualans(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
                 onDeletePayment={async (id) => { await apiCall(`/pembayaran-penjualans/${id}`, { method: 'DELETE' }); setPembayaranPenjualans(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onBulkAddShipment={async (payloads) => { await apiCall('/pengiriman-penjualans/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                onBulkAddPayment={async (payloads) => { await apiCall('/pembayaran-penjualans/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                levyDuties={levyDuties}
+                onAddLevyDuty={async (p) => { const r = await apiCall('/levy-duties', { method: 'POST', body: JSON.stringify(p) }); setLevyDuties(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdateLevyDuty={async (id, p) => { const r = await apiCall(`/levy-duties/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setLevyDuties(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeleteLevyDuty={async (id) => { await apiCall(`/levy-duties/${id}`, { method: 'DELETE' }); setLevyDuties(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onBulkAddLevyDuty={async (payloads) => { await apiCall('/levy-duties/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
               />
             )}
 
@@ -986,6 +1071,71 @@ export default function Home() {
                     console.error(e);
                   }
                 }}
+                onBulkAddStock={async (payloads) => { await apiCall('/stok-produks/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+              />
+            )}
+
+            {currentTab === 'logistics' && (
+              <LogisticsView
+                truckings={truckings}
+                peTargets={logisticPeTargets}
+                peAdditionals={logisticAdditionalPes}
+                peUsages={logisticPeUsages}
+                startDate={logisticsStartDate}
+                endDate={logisticsEndDate}
+                onStartDateChange={setLogisticsStartDate}
+                onEndDateChange={setLogisticsEndDate}
+                onAddTrucking={async (p) => { const r = await apiCall('/truckings', { method: 'POST', body: JSON.stringify(p) }); setTruckings(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdateTrucking={async (id, p) => { const r = await apiCall(`/truckings/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setTruckings(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeleteTrucking={async (id) => { await apiCall(`/truckings/${id}`, { method: 'DELETE' }); setTruckings(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onBulkAddTrucking={async (payloads) => { await apiCall('/truckings/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                
+                onAddPeTarget={async (p) => { const r = await apiCall('/logistic-pe-targets', { method: 'POST', body: JSON.stringify(p) }); setLogisticPeTargets(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdatePeTarget={async (id, p) => { const r = await apiCall(`/logistic-pe-targets/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setLogisticPeTargets(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeletePeTarget={async (id) => { await apiCall(`/logistic-pe-targets/${id}`, { method: 'DELETE' }); setLogisticPeTargets(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onBulkAddPeTarget={async (payloads) => { await apiCall('/logistic-pe-targets/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                
+                onAddPeAdditional={async (p) => { const r = await apiCall('/logistic-additional-pes', { method: 'POST', body: JSON.stringify(p) }); setLogisticAdditionalPes(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdatePeAdditional={async (id, p) => { const r = await apiCall(`/logistic-additional-pes/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setLogisticAdditionalPes(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeletePeAdditional={async (id) => { await apiCall(`/logistic-additional-pes/${id}`, { method: 'DELETE' }); setLogisticAdditionalPes(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onBulkAddPeAdditional={async (payloads) => { await apiCall('/logistic-additional-pes/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                
+                onAddPeUsage={async (p) => { const r = await apiCall('/logistic-pe-usages', { method: 'POST', body: JSON.stringify(p) }); setLogisticPeUsages(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdatePeUsage={async (id, p) => { const r = await apiCall(`/logistic-pe-usages/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setLogisticPeUsages(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeletePeUsage={async (id) => { await apiCall(`/logistic-pe-usages/${id}`, { method: 'DELETE' }); setLogisticPeUsages(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onBulkAddPeUsage={async (payloads) => { await apiCall('/logistic-pe-usages/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+              />
+            )}
+
+            {currentTab === 'finance' && (
+              <FinanceView
+                bankAccounts={bankAccounts}
+                balances={balances}
+                balanceChartData={balanceChartData}
+                bankTransactions={bankTransactions}
+                payments={payments}
+                kursData={kursData}
+                suppliers={suppliers}
+                startDate={financeStartDate}
+                endDate={financeEndDate}
+                onStartDateChange={setFinanceStartDate}
+                onEndDateChange={setFinanceEndDate}
+                onAddBank={async (p) => { const r = await apiCall('/finance/bank-accounts', { method: 'POST', body: JSON.stringify(p) }); setBankAccounts(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdateBank={async (id, p) => { const r = await apiCall(`/finance/bank-accounts/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setBankAccounts(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeleteBank={async (id) => { await apiCall(`/finance/bank-accounts/${id}`, { method: 'DELETE' }); setBankAccounts(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onAddBalance={async (p) => { const r = await apiCall('/finance/balances', { method: 'POST', body: JSON.stringify(p) }); setBalances(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdateBalance={async (id, p) => { const r = await apiCall(`/finance/balances/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setBalances(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeleteBalance={async (id) => { await apiCall(`/finance/balances/${id}`, { method: 'DELETE' }); setBalances(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onAddPayment={async (p) => { const r = await apiCall('/finance/payments', { method: 'POST', body: JSON.stringify(p) }); setPayments(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdatePayment={async (id, p) => { const r = await apiCall(`/finance/payments/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setPayments(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeletePayment={async (id) => { await apiCall(`/finance/payments/${id}`, { method: 'DELETE' }); setPayments(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                
+                onAddBankTransaction={async (p) => { await apiCall('/finance/bank-transactions', { method: 'POST', body: JSON.stringify(p) }); await fetchAllData(); }}
+                onUpdateBankTransaction={async (id, p) => { await apiCall(`/finance/bank-transactions/${id}`, { method: 'PUT', body: JSON.stringify(p) }); await fetchAllData(); }}
+                onDeleteBankTransaction={async (id) => { await apiCall(`/finance/bank-transactions/${id}`, { method: 'DELETE' }); await fetchAllData(); }}
+                
+                onAddPaymentHistory={async (p) => { await apiCall('/finance/payment-histories', { method: 'POST', body: JSON.stringify(p) }); await fetchAllData(); }}
+                onDeletePaymentHistory={async (id) => { await apiCall(`/finance/payment-histories/${id}`, { method: 'DELETE' }); await fetchAllData(); }}
               />
             )}
 
@@ -994,17 +1144,20 @@ export default function Home() {
                 suppliers={suppliers}
                 onAddSupplier={handleAddSupplier}
                 onUpdateSupplier={handleUpdateSupplier}
-                onDeleteSupplier={handleDeleteSupplier}
+                onDeleteSupplier={async (id) => { await apiCall(`/suppliers/${id}`, { method: 'DELETE' }); setSuppliers(prev => prev.filter(x => x.id !== id)); }}
+                onBulkAddSupplier={async (payloads) => { await apiCall('/suppliers/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
                 
                 storages={storages}
                 onAddStorage={handleAddStorage}
                 onUpdateStorage={handleUpdateStorage}
-                onDeleteStorage={handleDeleteStorage}
+                onDeleteStorage={async (id) => { await apiCall(`/storages/${id}`, { method: 'DELETE' }); setStorages(prev => prev.filter(x => x.id !== id)); }}
+                onBulkAddStorage={async (payloads) => { await apiCall('/storages/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
                 
                 products={products}
                 onAddProduct={handleAddProduct}
                 onUpdateProduct={handleUpdateProduct}
-                onDeleteProduct={handleDeleteProduct}
+                onDeleteProduct={async (id) => { await apiCall(`/master-produks/${id}`, { method: 'DELETE' }); setProducts(prev => prev.filter(x => x.id !== id)); }}
+                onBulkAddProduct={async (payloads) => { await apiCall('/master-produks/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
 
                 buyers={buyers}
                 onAddBuyer={handleAddBuyer}
