@@ -933,7 +933,7 @@ export default function Home() {
       case 'produksi':  return 'Dashboard Produksi';
       case 'sales':     return 'Dashboard Sales';
       case 'stok':      return 'Dashboard Stok & Inventori';
-      case 'logistik':  return 'Dashboard Logistik';
+      case 'logistics': return 'Dashboard Logistik';
       case 'finance':   return 'Dashboard Keuangan';
       case 'master':    return 'Master Data Control Center';
       default: return 'CPO Supply Chain';
