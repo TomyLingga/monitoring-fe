@@ -64,7 +64,11 @@ export default function FinanceView({
 
   // Specific Filters
   const [selectedBankId, setSelectedBankId] = useState('');
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState(''); // '', 'proses', 'selesai'
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('proses'); // 'proses' (default), '', 'selesai'
+  const todayStr = getToday();
+  const thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
+  const [paymentFilterStart, setPaymentFilterStart] = useState(thirtyDaysAgo);
+  const [paymentFilterEnd, setPaymentFilterEnd] = useState(todayStr);
 
   // Pagination states
   const PAGE_SIZE = 10;
@@ -511,8 +515,15 @@ export default function FinanceView({
   const filteredPayments = useMemo(() => {
     let pays = payments;
     if (paymentStatusFilter) pays = pays.filter(p => p.status === paymentStatusFilter);
+    // Filter tanggal hanya aktif saat status bukan 'proses'
+    if (paymentStatusFilter !== 'proses') {
+      pays = pays.filter(p => {
+        const d = (p.created_at || '').split('T')[0];
+        return d >= paymentFilterStart && d <= paymentFilterEnd;
+      });
+    }
     return pays;
-  }, [payments, paymentStatusFilter]);
+  }, [payments, paymentStatusFilter, paymentFilterStart, paymentFilterEnd]);
 
   return (
     <div className="space-y-6 relative animate-fade-in">
@@ -843,13 +854,21 @@ export default function FinanceView({
       {activeTab === 'payments' && (
         <div className="space-y-4 pt-4 animate-fade-in">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800 gap-4">
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-400 font-bold">Daftar Tagihan & Pembayaran</span>
               <select value={paymentStatusFilter} onChange={(e) => { setPaymentStatusFilter(e.target.value); setPaymentPage(1); }} className="px-3 py-1 rounded-lg glass-input text-xs bg-slate-900/80 text-white">
-                <option value="">Semua Status</option>
                 <option value="proses">Proses (Belum Lunas)</option>
                 <option value="selesai">Selesai (Lunas)</option>
+                <option value="">Semua Status</option>
               </select>
+              {/* Filter tanggal hanya muncul saat status bukan 'proses' */}
+              {paymentStatusFilter !== 'proses' && (
+                <>
+                  <input type="date" value={paymentFilterStart} onChange={e => { setPaymentFilterStart(e.target.value); setPaymentPage(1); }} className="px-3 py-1 rounded-lg glass-input text-xs bg-slate-900/80 text-white" />
+                  <span className="text-slate-500 font-bold text-xs">s/d</span>
+                  <input type="date" value={paymentFilterEnd} onChange={e => { setPaymentFilterEnd(e.target.value); setPaymentPage(1); }} className="px-3 py-1 rounded-lg glass-input text-xs bg-slate-900/80 text-white" />
+                </>
+              )}
             </div>
             <div className="flex items-center space-x-2">
               {/* Excel Template & Import buttons */}

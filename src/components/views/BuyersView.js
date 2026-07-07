@@ -278,12 +278,12 @@ export default function BuyersView({ buyers, onAdd, onUpdate, onDelete }) {
               </div>
 
               {/* Status summary */}
-              <div className="flex items-center justify-between text-xs bg-slate-950/50 p-2.5 rounded-lg border border-slate-900 mt-2">
+              <div className="flex items-center justify-between text-xs bg-slate-100 dark:bg-slate-950/50 p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 mt-2">
                 <div className="flex items-center space-x-1.5">
-                  <FileText className="h-4 w-4 text-teal-400" />
-                  <span className="text-slate-400">Total Kontrak Penjualan</span>
+                  <FileText className="h-4 w-4 text-teal-500" />
+                  <span className="text-slate-600 dark:text-slate-400">Total Kontrak Penjualan</span>
                 </div>
-                <strong className="text-white">{buyer.kontrak_penjualans_count || 0}</strong>
+                <strong className="text-slate-800 dark:text-white">{buyer.kontrak_penjualans_count || 0}</strong>
               </div>
             </GlassCard>
           ))}

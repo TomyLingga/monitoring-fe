@@ -55,12 +55,17 @@ export default function SalesView({
   const [levyDutyPage, setLevyDutyPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
 
-  // Shipment filters
+  // Shipment filters — default: status Proses tanpa filter tanggal
   const todayStr = new Date().toISOString().split('T')[0];
   const thirtyDaysAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().split('T')[0];
   const [shipFilterStart, setShipFilterStart] = useState(thirtyDaysAgo);
   const [shipFilterEnd, setShipFilterEnd] = useState(todayStr);
-  const [shipFilterStatus, setShipFilterStatus] = useState('');
+  const [shipFilterStatus, setShipFilterStatus] = useState('Proses');
+
+  // Contract filters — default: status aktif
+  const [contractFilterStatus, setContractFilterStatus] = useState('aktif');
+  const [contractFilterStart, setContractFilterStart] = useState(thirtyDaysAgo);
+  const [contractFilterEnd, setContractFilterEnd] = useState(todayStr);
 
   // Active modals
   const [activeModal, setActiveModal] = useState(null); // 'add_contract' | 'edit_contract' | 'add_shipment' | 'edit_shipment' | 'add_payment' | 'edit_payment'
@@ -372,18 +377,30 @@ export default function SalesView({
   // Pagination filters
   const paginatedContracts = useMemo(() => {
     const start = (contractPage - 1) * ITEMS_PER_PAGE;
-    return contracts.slice(start, start + ITEMS_PER_PAGE);
-  }, [contracts, contractPage]);
+    return filteredContracts.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredContracts, contractPage]);
 
-  // Filtered shipments with date range and status filter
+  // Filtered shipments — tanggal hanya aktif saat status bukan 'Proses'
   const filteredShipments = useMemo(() => {
     return shipments.filter(s => {
       const sDate = (s.tgl?.split('T')[0] || s.tgl || '');
-      const inRange = sDate >= shipFilterStart && sDate <= shipFilterEnd;
+      const useDate = shipFilterStatus !== 'Proses';
+      const inRange = useDate ? (sDate >= shipFilterStart && sDate <= shipFilterEnd) : true;
       const inStatus = shipFilterStatus === '' || s.status === shipFilterStatus;
       return inRange && inStatus;
     });
   }, [shipments, shipFilterStart, shipFilterEnd, shipFilterStatus]);
+
+  // Filtered contracts — tanggal hanya aktif saat status bukan 'aktif'
+  const filteredContracts = useMemo(() => {
+    return contracts.filter(c => {
+      const useDate = contractFilterStatus !== 'aktif' && contractFilterStatus !== '';
+      const cDate = (c.tgl_kontrak?.split('T')[0] || '');
+      const inRange = useDate ? (cDate >= contractFilterStart && cDate <= contractFilterEnd) : true;
+      const inStatus = contractFilterStatus === '' || c.status === contractFilterStatus;
+      return inRange && inStatus;
+    });
+  }, [contracts, contractFilterStatus, contractFilterStart, contractFilterEnd]);
 
   const paginatedShipments = useMemo(() => {
     const start = (shipmentPage - 1) * ITEMS_PER_PAGE;
@@ -812,8 +829,27 @@ export default function SalesView({
       {/* Tab: Kontrak Penjualan */}
       {activeTab === 'contracts' && (
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={openAddContract} className="flex items-center space-x-1.5 px-4 py-2 rounded-xl glass-button-primary text-xs font-bold"><Plus className="h-4 w-4" /><span>Buat Kontrak Penjualan</span></button>
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
+            {/* Filter tanggal hanya muncul saat status bukan aktif */}
+            {contractFilterStatus !== 'aktif' && contractFilterStatus !== '' && (
+              <>
+                <CustomDateInput value={contractFilterStart} onChange={setContractFilterStart} className="w-32" />
+                <span className="text-slate-500 font-bold text-xs">s/d</span>
+                <CustomDateInput value={contractFilterEnd} onChange={setContractFilterEnd} className="w-32" />
+              </>
+            )}
+            <select
+              value={contractFilterStatus}
+              onChange={e => { setContractFilterStatus(e.target.value); setContractPage(1); }}
+              className="px-3 py-1.5 rounded-lg glass-input text-xs"
+            >
+              <option value="aktif">Aktif</option>
+              <option value="selesai">Selesai</option>
+              <option value="">Semua Status</option>
+            </select>
+            <div className="ml-auto">
+              <button onClick={openAddContract} className="flex items-center space-x-1.5 px-4 py-2 rounded-xl glass-button-primary text-xs font-bold"><Plus className="h-4 w-4" /><span>Buat Kontrak Penjualan</span></button>
+            </div>
           </div>
           <GlassCard className="overflow-hidden" hover={false}>
             <div className="overflow-x-auto">
@@ -856,7 +892,9 @@ export default function SalesView({
                         </td>
                         <td className="py-3 px-4 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                            c.status === 'aktif' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' : 'bg-slate-800 text-slate-400'
+                            c.status === 'aktif'   ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20' :
+                            c.status === 'selesai' ? 'bg-slate-500/20 text-slate-600 dark:text-slate-400 border border-slate-400/30 dark:border-slate-600/30' :
+                                                     'bg-red-500/10 text-red-500 border border-red-400/30'
                           }`}>{c.status}</span>
                         </td>
                         <td className="py-3 px-4 text-center">
@@ -877,13 +915,13 @@ export default function SalesView({
               </table>
             </div>
             {/* Pagination */}
-            {contracts.length > ITEMS_PER_PAGE && (
+            {filteredContracts.length > ITEMS_PER_PAGE && (
               <div className="flex items-center justify-between p-4 border-t border-slate-800 text-xs">
-                <span className="text-slate-400 font-bold">Total {contracts.length} kontrak</span>
+                <span className="text-slate-400 font-bold">Total {filteredContracts.length} kontrak</span>
                 <div className="flex items-center space-x-2">
                   <button onClick={() => setContractPage(p => Math.max(1, p - 1))} disabled={contractPage === 1} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
-                  <span className="text-white font-bold">Hal {contractPage} / {Math.ceil(contracts.length / ITEMS_PER_PAGE)}</span>
-                  <button onClick={() => setContractPage(p => Math.min(Math.ceil(contracts.length / ITEMS_PER_PAGE), p + 1))} disabled={contractPage === Math.ceil(contracts.length / ITEMS_PER_PAGE)} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
+                  <span className="text-white font-bold">Hal {contractPage} / {Math.ceil(filteredContracts.length / ITEMS_PER_PAGE)}</span>
+                  <button onClick={() => setContractPage(p => Math.min(Math.ceil(filteredContracts.length / ITEMS_PER_PAGE), p + 1))} disabled={contractPage === Math.ceil(filteredContracts.length / ITEMS_PER_PAGE)} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
             )}
@@ -896,13 +934,18 @@ export default function SalesView({
         <div className="space-y-4">
           {/* Filter bar */}
           <div className="flex flex-wrap items-center gap-2 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
-            <CustomDateInput value={shipFilterStart} onChange={setShipFilterStart} className="w-32" />
-            <span className="text-slate-500 font-bold text-xs">s/d</span>
-            <CustomDateInput value={shipFilterEnd} onChange={setShipFilterEnd} className="w-32" />
+            {/* Filter tanggal hanya muncul saat status bukan Proses */}
+            {shipFilterStatus !== 'Proses' && (
+              <>
+                <CustomDateInput value={shipFilterStart} onChange={setShipFilterStart} className="w-32" />
+                <span className="text-slate-500 font-bold text-xs">s/d</span>
+                <CustomDateInput value={shipFilterEnd} onChange={setShipFilterEnd} className="w-32" />
+              </>
+            )}
             <select value={shipFilterStatus} onChange={e => { setShipFilterStatus(e.target.value); setShipmentPage(1); }} className="px-3 py-1.5 rounded-lg glass-input text-xs">
-              <option value="">Semua Status</option>
               <option value="Proses">Proses</option>
               <option value="Selesai">Selesai</option>
+              <option value="">Semua Status</option>
             </select>
             <div className="ml-auto flex items-center gap-2">
               <button onClick={downloadShipmentTemplate} className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors">
@@ -984,7 +1027,7 @@ export default function SalesView({
                         </td>
                         <td className="py-3 px-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                            s.incoterm === 'FRANCO' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                            s.incoterm === 'FRANCO' ? 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20' : 'bg-slate-200 text-slate-700 border border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
                           }`}>
                             {s.incoterm ?? 'LOCO'}
                           </span>
