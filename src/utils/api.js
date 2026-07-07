@@ -1,5 +1,5 @@
 // API and Mock Data Helper
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').replace(/\/$/, '');
 
 // Realistic Mock Data matching the new PostgreSQL database schema exactly
 const MOCK_DATA = {
