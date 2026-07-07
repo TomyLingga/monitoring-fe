@@ -4,14 +4,21 @@ import {
   Database,
   LogOut,
   ChevronLeft,
-  Menu 
+  Menu,
+  FlaskConical,
+  Boxes,
+  TrendingUp
 } from 'lucide-react';
 
 export default function Sidebar({ currentTab, setCurrentTab, user, onLogout, isOpen, onToggle }) {
   const menuItems = [
     { id: 'dashboard', name: 'Dashboard Sourcing', icon: LayoutDashboard },
+    { id: 'produksi', name: 'Dashboard Produksi', icon: FlaskConical },
+    { id: 'sales', name: 'Dashboard Sales', icon: TrendingUp },
+    { id: 'stok', name: 'Dashboard Stok', icon: Boxes },
     { id: 'master', name: 'Master Data', icon: Database },
   ];
+
 
   return (
     <aside className={`w-80 h-screen fixed left-0 top-0 glass-card rounded-r-3xl border-r border-t-0 border-b-0 border-l-0 flex flex-col justify-between p-6 z-35 transition-transform duration-300 ease-in-out ${

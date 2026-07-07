@@ -8,6 +8,7 @@ export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) 
   const [showForm, setShowForm] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
   const [nama, setNama] = useState('');
+  const [keterangan, setKeterangan] = useState('lokal');
 
   // Local Toast alert system
   const [toast, setToast] = useState(null);
@@ -20,6 +21,7 @@ export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) 
   const handleEditClick = (supplier) => {
     setEditingSupplier(supplier);
     setNama(supplier.nama);
+    setKeterangan(supplier.keterangan || 'lokal');
     setShowForm(true);
   };
 
@@ -27,6 +29,7 @@ export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) 
     setShowForm(false);
     setEditingSupplier(null);
     setNama('');
+    setKeterangan('lokal');
   };
 
   const handleSubmit = (e) => {
@@ -41,7 +44,7 @@ export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) 
       return;
     }
 
-    const payload = { nama };
+    const payload = { nama, keterangan };
     if (editingSupplier) {
       onUpdate(editingSupplier.id, payload);
       showToast('Supplier berhasil diperbarui', 'success');
@@ -206,6 +209,18 @@ export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) 
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Keterangan *</label>
+                <select
+                  value={keterangan}
+                  onChange={(e) => setKeterangan(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl glass-input text-sm bg-slate-900 text-white"
+                >
+                  <option value="lokal">Lokal</option>
+                  <option value="impor">Impor</option>
+                </select>
+              </div>
+
               <div className="flex space-x-3 pt-2">
                 <button
                   type="submit"
@@ -236,7 +251,12 @@ export default function SuppliersView({ suppliers, onAdd, onUpdate, onDelete }) 
                   </div>
                   <div>
                     <h4 className="font-bold text-white text-sm">{supplier.nama}</h4>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Supplier ID: #{supplier.id}</p>
+                    <div className="flex items-center space-x-1.5 mt-0.5">
+                      <p className="text-[10px] text-slate-500">Supplier ID: #{supplier.id}</p>
+                      <span className={`px-1.5 py-0.2 rounded text-[8px] font-black uppercase ${
+                        supplier.keterangan === 'impor' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
+                      }`}>{supplier.keterangan || 'lokal'}</span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex space-x-1.5">

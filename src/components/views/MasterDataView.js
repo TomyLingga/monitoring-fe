@@ -3,7 +3,8 @@ import GlassCard from '../GlassCard';
 import SuppliersView from './SuppliersView';
 import StorageMasterView from './StorageMasterView';
 import ProductMasterView from './ProductMasterView';
-import { Users, Database, Tag, AlertTriangle, CheckCircle, Info, X } from 'lucide-react';
+import BuyersView from './BuyersView';
+import { Users, Database, Tag, AlertTriangle, CheckCircle, Info, X, ShoppingBag } from 'lucide-react';
 
 export default function MasterDataView({
   suppliers,
@@ -19,7 +20,12 @@ export default function MasterDataView({
   products,
   onAddProduct,
   onUpdateProduct,
-  onDeleteProduct
+  onDeleteProduct,
+
+  buyers,
+  onAddBuyer,
+  onUpdateBuyer,
+  onDeleteBuyer
 }) {
   const [activeSubTab, setActiveSubTab] = useState('suppliers'); 
   
@@ -68,6 +74,17 @@ export default function MasterDataView({
     });
   };
 
+  const wrappedDeleteBuyer = (id) => {
+    setConfirmDialog({
+      message: 'Hapus Buyer / Customer ini? Tindakan ini akan menghapus semua kontrak penjualan terkait.',
+      onConfirm: () => {
+        onDeleteBuyer(id);
+        setConfirmDialog(null);
+        showToast('Buyer berhasil dihapus', 'success');
+      }
+    });
+  };
+
   // Wrapped add/update actions to show beautiful toasts
   const wrappedAddSupplier = (payload) => {
     onAddSupplier(payload);
@@ -96,10 +113,20 @@ export default function MasterDataView({
     showToast('Produk berhasil diperbarui', 'success');
   };
 
+  const wrappedAddBuyer = (payload) => {
+    onAddBuyer(payload);
+    showToast('Buyer baru berhasil ditambahkan', 'success');
+  };
+  const wrappedUpdateBuyer = (id, payload) => {
+    onUpdateBuyer(id, payload);
+    showToast('Buyer berhasil diperbarui', 'success');
+  };
+
   const subTabs = [
-    { id: 'suppliers', label: 'Supplier Master', icon: Users, desc: 'Daftar Mitra Supplier CPO' },
+    { id: 'suppliers', label: 'Supplier Master', icon: Users, desc: 'Mitra Supplier Bahan CPO' },
+    { id: 'buyers', label: 'Buyer Master', icon: ShoppingBag, desc: 'Mitra Buyer / Customer Retail' },
     { id: 'storages', label: 'Storage Master', icon: Database, desc: 'Pengaturan Tangki & Gudang' },
-    { id: 'products', label: 'Produk Master', icon: Tag, desc: 'Daftar Varian Produk & Satuan' },
+    { id: 'products', label: 'Produk & Material', icon: Tag, desc: 'Daftar Produk, Material & Satuan' },
   ];
 
   return (
@@ -187,6 +214,14 @@ export default function MasterDataView({
             onAdd={wrappedAddSupplier}
             onUpdate={wrappedUpdateSupplier}
             onDelete={wrappedDeleteSupplier}
+          />
+        )}
+        {activeSubTab === 'buyers' && (
+          <BuyersView
+            buyers={buyers}
+            onAdd={wrappedAddBuyer}
+            onUpdate={wrappedUpdateBuyer}
+            onDelete={wrappedDeleteBuyer}
           />
         )}
         {activeSubTab === 'storages' && (

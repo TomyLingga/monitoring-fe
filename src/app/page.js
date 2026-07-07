@@ -5,6 +5,9 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import DashboardView from '@/components/views/DashboardView';
 import MasterDataView from '@/components/views/MasterDataView';
+import ProductionView from '@/components/views/ProductionView';
+import StokView from '@/components/views/StokView';
+import SalesView from '@/components/views/SalesView';
 import { apiCall } from '@/utils/api';
 import { ShieldCheck, LogIn, Lock, Mail, AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -22,12 +25,7 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [theme, setTheme] = useState(() => {
-    if (typeof window === 'undefined') return 'dark';
-    const savedTheme = localStorage.getItem('cpo_theme');
-    if (savedTheme) return savedTheme;
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-  });
+  const [theme, setTheme] = useState('dark');
   
   const getThirtyDaysAgo = () => {
     const d = new Date();
@@ -47,6 +45,19 @@ export default function Home() {
   const [contracts, setContracts] = useState([]);
   const [incomingLogs, setIncomingLogs] = useState([]);
   const [dailyTargets, setDailyTargets] = useState([]);
+  const [stocks, setStocks] = useState([]);
+  const [buyers, setBuyers] = useState([]);
+  const [kontrakPenjualans, setKontrakPenjualans] = useState([]);
+  const [pengirimanPenjualans, setPengirimanPenjualans] = useState([]);
+  const [pembayaranPenjualans, setPembayaranPenjualans] = useState([]);
+
+  // Production State
+  const [prodStartDate, setProdStartDate] = useState(() => { const d = new Date(); d.setDate(d.getDate()-30); return d.toISOString().split('T')[0]; });
+  const [prodEndDate, setProdEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [prosesRefineries, setProsesRefineries] = useState([]);
+  const [prosesFraksinasis, setProsesFraksinasis] = useState([]);
+  const [prosesPackagings, setProsesPackagings] = useState([]);
+  const [dailyProductionTargets, setDailyProductionTargets] = useState([]);
 
   // Sync to prevent NextJS hydration errors
   useEffect(() => {
@@ -57,25 +68,39 @@ export default function Home() {
     }
   }, []);
 
+  // Apply saved theme on mount (client-only)
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.documentElement.classList.toggle('light', theme === 'light');
-      document.documentElement.style.colorScheme = theme;
-      localStorage.setItem('cpo_theme', theme);
-    }
+    const savedTheme = localStorage.getItem('cpo_theme');
+    const preferredTheme = savedTheme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    setTheme(preferredTheme);
+  }, []);
+
+  // Sync theme class on <html> whenever theme changes
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light');
+    document.documentElement.style.colorScheme = theme;
+    localStorage.setItem('cpo_theme', theme);
   }, [theme]);
 
   // Fetch all app data from API
   const fetchAllData = useCallback(async (start = startDate, end = endDate) => {
     setIsRefreshing(true);
     try {
-      const [dash, sups, stores, prods, ctrs, targets] = await Promise.all([
+      const [
+        dash, sups, stores, prods, ctrs, targets, prodStocks,
+        custs, sCtrs, sShips, sPays
+      ] = await Promise.all([
         apiCall(`/dashboard?start_date=${start}&end_date=${end}`),
         apiCall('/suppliers'),
         apiCall('/storages'),
         apiCall('/master-produks'),
         apiCall('/kontrak-cpos'),
         apiCall('/daily-targets'),
+        apiCall('/stok-produks'),
+        apiCall('/buyers'),
+        apiCall('/kontrak-penjualans'),
+        apiCall('/pengiriman-penjualans'),
+        apiCall('/pembayaran-penjualans'),
       ]);
 
       // Align state
@@ -83,6 +108,11 @@ export default function Home() {
       setProducts(prods);
       setContracts(ctrs);
       setDailyTargets(Array.isArray(targets) ? targets : []);
+      setStocks(Array.isArray(prodStocks) ? prodStocks : []);
+      setBuyers(Array.isArray(custs) ? custs : []);
+      setKontrakPenjualans(Array.isArray(sCtrs) ? sCtrs : []);
+      setPengirimanPenjualans(Array.isArray(sShips) ? sShips : []);
+      setPembayaranPenjualans(Array.isArray(sPays) ? sPays : []);
 
       // Extract storages from dashboardData to have details of stok, terisi, and persentase
       const mergedStorages = stores.map(store => {
@@ -105,6 +135,28 @@ export default function Home() {
       setIsRefreshing(false);
     }
   }, [startDate, endDate]);
+
+  // Fetch Production Data
+  const fetchProductionData = useCallback(async (start = prodStartDate, end = prodEndDate) => {
+    try {
+      const [refs, fraks, packs, prodTargets] = await Promise.all([
+        apiCall(`/proses-refineries?start_date=${start}&end_date=${end}`),
+        apiCall(`/proses-fraksinasis?start_date=${start}&end_date=${end}`),
+        apiCall(`/proses-packagings?start_date=${start}&end_date=${end}`),
+        apiCall('/daily-production-targets'),
+      ]);
+      setProsesRefineries(Array.isArray(refs) ? refs : []);
+      setProsesFraksinasis(Array.isArray(fraks) ? fraks : []);
+      setProsesPackagings(Array.isArray(packs) ? packs : []);
+      setDailyProductionTargets(Array.isArray(prodTargets) ? prodTargets : []);
+    } catch (e) {
+      console.error('Production data fetch failed', e);
+    }
+  }, [prodStartDate, prodEndDate]);
+
+  useEffect(() => {
+    if (user) fetchProductionData(prodStartDate, prodEndDate);
+  }, [user, fetchProductionData, prodStartDate, prodEndDate]);
 
   useEffect(() => {
     if (user) {
@@ -247,6 +299,34 @@ export default function Home() {
       await fetchAllData();
     } catch (err) {
       console.warn("Backend offline, updating local state", err);
+    }
+  };
+
+  // ── CRUD: Buyers ──
+  const handleAddBuyer = async (payload) => {
+    try {
+      await apiCall('/buyers', { method: 'POST', body: JSON.stringify(payload) });
+      await fetchAllData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateBuyer = async (id, payload) => {
+    try {
+      await apiCall(`/buyers/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      await fetchAllData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteBuyer = async (id) => {
+    try {
+      await apiCall(`/buyers/${id}`, { method: 'DELETE' });
+      await fetchAllData();
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -760,7 +840,9 @@ export default function Home() {
   const getTabTitle = () => {
     switch (currentTab) {
       case 'dashboard': return 'Dashboard Overview CPO';
-      case 'master': return 'Master Data Control Center';
+      case 'produksi':  return 'Dashboard Produksi';
+      case 'stok':      return 'Dashboard Stok & Inventori';
+      case 'master':    return 'Master Data Control Center';
       default: return 'CPO Supply Chain';
     }
   };
@@ -811,7 +893,87 @@ export default function Home() {
                 onDeleteDailyTarget={handleDeleteDailyTarget}
               />
             )}
-            
+
+            {currentTab === 'produksi' && (
+              <ProductionView
+                products={products}
+                storages={storages}
+                startDate={prodStartDate}
+                endDate={prodEndDate}
+                onDateChange={(s, e) => { setProdStartDate(s); setProdEndDate(e); fetchProductionData(s, e); }}
+                prosesRefineries={prosesRefineries}
+                prosesFraksinasis={prosesFraksinasis}
+                prosesPackagings={prosesPackagings}
+                dailyProductionTargets={dailyProductionTargets}
+                onAddRefinery={async (p) => { try { const r = await apiCall('/proses-refineries', { method: 'POST', body: JSON.stringify(p) }); setProsesRefineries(prev => [r, ...prev]); } catch(e) { console.error(e); } }}
+                onUpdateRefinery={async (id, p) => { try { const r = await apiCall(`/proses-refineries/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setProsesRefineries(prev => prev.map(x => x.id === id ? r : x)); } catch(e) { console.error(e); } }}
+                onDeleteRefinery={async (id) => { try { await apiCall(`/proses-refineries/${id}`, { method: 'DELETE' }); setProsesRefineries(prev => prev.filter(x => x.id !== id)); } catch(e) { console.error(e); } }}
+                onAddFraksinasi={async (p) => { try { const r = await apiCall('/proses-fraksinasis', { method: 'POST', body: JSON.stringify(p) }); setProsesFraksinasis(prev => [r, ...prev]); } catch(e) { console.error(e); } }}
+                onUpdateFraksinasi={async (id, p) => { try { const r = await apiCall(`/proses-fraksinasis/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setProsesFraksinasis(prev => prev.map(x => x.id === id ? r : x)); } catch(e) { console.error(e); } }}
+                onDeleteFraksinasi={async (id) => { try { await apiCall(`/proses-fraksinasis/${id}`, { method: 'DELETE' }); setProsesFraksinasis(prev => prev.filter(x => x.id !== id)); } catch(e) { console.error(e); } }}
+                onAddPackaging={async (p) => { try { const r = await apiCall('/proses-packagings', { method: 'POST', body: JSON.stringify(p) }); setProsesPackagings(prev => [r, ...prev]); } catch(e) { console.error(e); } }}
+                onUpdatePackaging={async (id, p) => { try { const r = await apiCall(`/proses-packagings/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setProsesPackagings(prev => prev.map(x => x.id === id ? r : x)); } catch(e) { console.error(e); } }}
+                onDeletePackaging={async (id) => { try { await apiCall(`/proses-packagings/${id}`, { method: 'DELETE' }); setProsesPackagings(prev => prev.filter(x => x.id !== id)); } catch(e) { console.error(e); } }}
+                onAddProductionTarget={async (p) => { try { const r = await apiCall('/daily-production-targets', { method: 'POST', body: JSON.stringify(p) }); setDailyProductionTargets(prev => [r, ...prev.filter(x => !(x.tgl?.split('T')[0] === p.tgl && x.jenis === p.jenis))]); } catch(e) { console.error(e); } }}
+                onUpdateProductionTarget={async (id, p) => { try { const r = await apiCall(`/daily-production-targets/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setDailyProductionTargets(prev => prev.map(x => x.id === id ? r : x)); } catch(e) { console.error(e); } }}
+                onDeleteProductionTarget={async (id) => { try { await apiCall(`/daily-production-targets/${id}`, { method: 'DELETE' }); setDailyProductionTargets(prev => prev.filter(x => x.id !== id)); } catch(e) { console.error(e); } }}
+              />
+            )}
+
+            {currentTab === 'sales' && (
+              <SalesView
+                contracts={kontrakPenjualans}
+                buyers={buyers}
+                products={products}
+                storages={storages}
+                shipments={pengirimanPenjualans}
+                payments={pembayaranPenjualans}
+                theme={theme}
+                onAddContract={async (p) => { const r = await apiCall('/kontrak-penjualans', { method: 'POST', body: JSON.stringify(p) }); setKontrakPenjualans(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdateContract={async (id, p) => { const r = await apiCall(`/kontrak-penjualans/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setKontrakPenjualans(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeleteContract={async (id) => { await apiCall(`/kontrak-penjualans/${id}`, { method: 'DELETE' }); setKontrakPenjualans(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onAddShipment={async (p) => { const r = await apiCall('/pengiriman-penjualans', { method: 'POST', body: JSON.stringify(p) }); setPengirimanPenjualans(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdateShipment={async (id, p) => { const r = await apiCall(`/pengiriman-penjualans/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setPengirimanPenjualans(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeleteShipment={async (id) => { await apiCall(`/pengiriman-penjualans/${id}`, { method: 'DELETE' }); setPengirimanPenjualans(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+                onAddPayment={async (p) => { const r = await apiCall('/pembayaran-penjualans', { method: 'POST', body: JSON.stringify(p) }); setPembayaranPenjualans(prev => [r, ...prev]); await fetchAllData(); }}
+                onUpdatePayment={async (id, p) => { const r = await apiCall(`/pembayaran-penjualans/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setPembayaranPenjualans(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
+                onDeletePayment={async (id) => { await apiCall(`/pembayaran-penjualans/${id}`, { method: 'DELETE' }); setPembayaranPenjualans(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
+              />
+            )}
+
+            {currentTab === 'stok' && (
+              <StokView
+                stocks={stocks}
+                products={products}
+                storages={storages}
+                theme={theme}
+                onAddStock={async (payload) => {
+                  try {
+                    const res = await apiCall('/stok-produks', { method: 'POST', body: JSON.stringify(payload) });
+                    setStocks(prev => [res, ...prev.filter(x => !(x.produk_id === payload.produk_id && x.storage_id === payload.storage_id))]);
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                onUpdateStock={async (id, payload) => {
+                  try {
+                    const res = await apiCall(`/stok-produks/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+                    setStocks(prev => prev.map(x => x.id === id ? res : x));
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                onDeleteStock={async (id) => {
+                  try {
+                    await apiCall(`/stok-produks/${id}`, { method: 'DELETE' });
+                    setStocks(prev => prev.filter(x => x.id !== id));
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+              />
+            )}
+
             {currentTab === 'master' && (
               <MasterDataView
                 suppliers={suppliers}
@@ -828,6 +990,11 @@ export default function Home() {
                 onAddProduct={handleAddProduct}
                 onUpdateProduct={handleUpdateProduct}
                 onDeleteProduct={handleDeleteProduct}
+
+                buyers={buyers}
+                onAddBuyer={handleAddBuyer}
+                onUpdateBuyer={handleUpdateBuyer}
+                onDeleteBuyer={handleDeleteBuyer}
               />
             )}
           </div>
