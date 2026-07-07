@@ -922,21 +922,22 @@ export default function SalesView({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
-                    <th className="py-3 px-4">Tanggal</th>
-                    <th className="py-3 px-4">Nomor Kontrak</th>
-                    <th className="py-3 px-4">Buyer / Customer</th>
-                    <th className="py-3 px-4">Produk</th>
-                    <th className="py-3 px-4 text-right">Qty Kirim</th>
-                    <th className="py-3 px-4 text-right">Qty Terima</th>
-                    <th className="py-3 px-4 text-right text-rose-400">Outstanding Kirim</th>
-                    <th className="py-3 px-4 text-right text-amber-400">Outstanding Bayar</th>
-                    <th className="py-3 px-4">Ekspedisi (Via)</th>
-                    <th className="py-3 px-4">Incoterm</th>
-                    <th className="py-3 px-4">Termin</th>
-                    <th className="py-3 px-4">Nomor Invoice</th>
-                    <th className="py-3 px-4 text-right">Nilai Invoice</th>
-                    <th className="py-3 px-4 text-center">Status</th>
-                    <th className="py-3 px-4 text-center">Aksi</th>
+                    <th className="py-3 px-3">Tanggal</th>
+                    <th className="py-3 px-3">Nomor Kontrak</th>
+                    <th className="py-3 px-3">Buyer</th>
+                    <th className="py-3 px-3">Produk</th>
+                    <th className="py-3 px-3">Storage Sumber</th>
+                    <th className="py-3 px-3 text-right">Qty Kirim</th>
+                    <th className="py-3 px-3 text-right">Qty Terima</th>
+                    <th className="py-3 px-3 text-right text-rose-400">Ots. Kirim</th>
+                    <th className="py-3 px-3 text-right text-amber-400">Ots. Bayar</th>
+                    <th className="py-3 px-3 text-center">Via</th>
+                    <th className="py-3 px-3 text-center">Incoterm</th>
+                    <th className="py-3 px-3">Termin</th>
+                    <th className="py-3 px-3">Nomor Invoice</th>
+                    <th className="py-3 px-3 text-right">Nilai Invoice</th>
+                    <th className="py-3 px-3 text-center">Status</th>
+                    <th className="py-3 px-3 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
@@ -945,46 +946,74 @@ export default function SalesView({
                     const contract = s.kontrak_penjualan;
                     const outstandingShipment = contract ? Math.max(0, parseFloat(contract.qty || 0) - parseFloat(contract.total_terkirim || 0)) : 0;
                     const outstandingPayment = contract ? Math.max(0, parseFloat(contract.total_nilai_kontrak || 0) - parseFloat(contract.total_terbayar || 0)) : 0;
+                    const storage = s.storage;
+                    
                     return (
                       <tr key={s.id} className="hover:bg-slate-900/40 transition-colors align-middle">
-                        <td className="py-3 px-4 text-slate-400 font-semibold">{s.tgl ? new Date(s.tgl).toLocaleDateString('id-ID') : '-'}</td>
-                        <td className="py-3 px-4 font-bold text-white">{s.kontrak_penjualan?.nomor_kontrak ?? 'N/A'}</td>
-                        <td className="py-3 px-4 font-semibold text-slate-350">{s.kontrak_penjualan?.buyer?.nama ?? 'N/A'}</td>
-                        <td className="py-3 px-4 text-teal-400 font-bold">{s.kontrak_penjualan?.produk?.nama_produk ?? 'N/A'}</td>
-                        <td className="py-3 px-4 text-right text-white font-black">{parseFloat(s.qty_kirim).toLocaleString('id-ID')}</td>
-                        <td className="py-3 px-4 text-right text-emerald-400 font-bold">{parseFloat(s.qty_terima || s.qty_kirim).toLocaleString('id-ID')}</td>
-                        <td className="py-3 px-4 text-right font-extrabold">
-                          <span className={outstandingShipment > 0 ? 'text-rose-400' : 'text-slate-500'}>{outstandingShipment.toLocaleString('id-ID')}</span>
+                        <td className="py-3 px-3 text-slate-300 font-semibold whitespace-nowrap text-[11px]">
+                          {s.tgl ? new Date(s.tgl).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                         </td>
-                        <td className="py-3 px-4 text-right font-extrabold">
-                          <span className={outstandingPayment > 0 ? 'text-amber-400' : 'text-slate-500'}>{formatRupiah(outstandingPayment)}</span>
+                        <td className="py-3 px-3 font-bold text-teal-400 font-mono text-[11px]">{s.kontrak_penjualan?.nomor_kontrak ?? 'N/A'}</td>
+                        <td className="py-3 px-3 font-semibold text-white max-w-[120px] truncate" title={s.kontrak_penjualan?.buyer?.nama}>{s.kontrak_penjualan?.buyer?.nama ?? 'N/A'}</td>
+                        <td className="py-3 px-3 text-sky-400 font-bold">{s.kontrak_penjualan?.produk?.kode_produk ?? s.kontrak_penjualan?.produk?.nama_produk ?? 'N/A'}</td>
+                        <td className="py-3 px-3">
+                          {storage ? (
+                            <div className="flex flex-col">
+                              <span className="text-white font-bold text-[11px]">{storage.nama}</span>
+                              <span className="text-slate-500 text-[9px]">{storage.lokasi}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500 italic text-[10px]">Auto</span>
+                          )}
                         </td>
-                        <td className="py-3 px-4 text-slate-400 font-semibold">{s.via ?? '-'}</td>
-                        <td className="py-3 px-4 text-slate-400 font-mono">{s.incoterm ?? 'LOCO'}</td>
-                        <td className="py-3 px-4 text-slate-500 font-bold">{s.termin ?? 'CAD'}</td>
-                        <td className="py-3 px-4 text-slate-300 font-mono text-[11px]">{invoice?.nomor_invoice ?? '-'}</td>
-                        <td className="py-3 px-4 text-right text-amber-400 font-black">{invoice?.nilai ? formatRupiah(invoice.nilai) : '-'}</td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-3 text-right text-white font-black">{parseFloat(s.qty_kirim).toLocaleString('id-ID')}</td>
+                        <td className="py-3 px-3 text-right text-emerald-400 font-bold">{parseFloat(s.qty_terima || s.qty_kirim).toLocaleString('id-ID')}</td>
+                        <td className="py-3 px-3 text-right font-extrabold">
+                          <span className={outstandingShipment > 0 ? 'text-rose-400' : 'text-slate-600'}>{outstandingShipment.toLocaleString('id-ID')}</span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold whitespace-nowrap">
+                          <span className={outstandingPayment > 0 ? 'text-amber-400' : 'text-slate-600'}>{formatRupiah(outstandingPayment)}</span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900/60 border border-slate-800 text-slate-400 font-semibold text-[10px]">
+                            {s.via === 'Kapal Tanker' && '🚢'}
+                            {s.via === 'Truck Fuso' && '🚛'}
+                            {s.via !== 'Kapal Tanker' && s.via !== 'Truck Fuso' && '🚚'}
+                            <span className="ml-1">{s.via ?? '-'}</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                            s.incoterm === 'FRANCO' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                          }`}>
+                            {s.incoterm ?? 'LOCO'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-400 font-bold text-[10px]">{s.termin ?? 'CAD'}</td>
+                        <td className="py-3 px-3 text-slate-300 font-mono text-[10px]">{invoice?.nomor_invoice ?? '-'}</td>
+                        <td className="py-3 px-3 text-right text-amber-400 font-bold whitespace-nowrap">{invoice?.nilai ? formatRupiah(invoice.nilai) : '-'}</td>
+                        <td className="py-3 px-3 text-center">
                           <button 
                             onClick={() => onUpdateShipment(s.id, { ...s, status: s.status === 'Selesai' ? 'Proses' : 'Selesai', kontrak_penjualan_id: s.kontrak_penjualan_id })}
                             className={`px-2 py-0.5 rounded-full text-[9px] font-bold transition-all hover:scale-105 cursor-pointer ${
                               s.status === 'Selesai' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20'
                             }`}
+                            title="Klik untuk toggle status"
                           >
                             {s.status}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-3 text-center">
                           <div className="flex items-center justify-center space-x-1">
-                            <button onClick={() => openEditShipment(s)} className="p-1 rounded bg-slate-900 text-slate-400 hover:text-teal-400 border border-slate-800 transition-colors"><Edit className="h-3.5 w-3.5" /></button>
-                            <button onClick={() => triggerDelete('pengiriman', s)} className="p-1 rounded bg-slate-900 text-slate-400 hover:text-red-400 border border-slate-800 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => openEditShipment(s)} className="p-1 rounded bg-slate-900 text-slate-400 hover:text-teal-400 border border-slate-800 transition-colors" title="Edit"><Edit className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => triggerDelete('pengiriman', s)} className="p-1 rounded bg-slate-900 text-slate-400 hover:text-red-400 border border-slate-800 transition-colors" title="Hapus"><Trash2 className="h-3.5 w-3.5" /></button>
                           </div>
                         </td>
                       </tr>
                     );
                   })}
                   {paginatedShipments.length === 0 && (
-                    <tr><td colSpan={15} className="py-8 text-center text-slate-500 italic">Belum ada data pengiriman</td></tr>
+                    <tr><td colSpan={16} className="py-8 text-center text-slate-500 italic">Belum ada data pengiriman</td></tr>
                   )}
                 </tbody>
               </table>

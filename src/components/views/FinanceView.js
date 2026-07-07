@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { DollarSign, Building, Wallet, CreditCard, Plus, Edit, Trash2, CheckCircle, AlertTriangle, X, TrendingUp, Filter, Eye, Info } from 'lucide-react';
+import { DollarSign, Building, Wallet, CreditCard, Plus, Edit, Trash2, CheckCircle, AlertTriangle, X, TrendingUp, Filter, Eye, Info, Download, Upload, Loader2 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LineChart, Line, BarChart, Bar } from 'recharts';
+import * as XLSX from 'xlsx';
 
 function GlassCard({ children, className = '', hover = true }) {
   return (
@@ -95,6 +96,233 @@ export default function FinanceView({
         setConfirmDialog(null);
       }
     });
+  };
+
+  // ===== EXCEL TEMPLATE & IMPORT FUNCTIONS =====
+  
+  // Download Template Mutasi Saldo Harian
+  const downloadMutasiTemplate = () => {
+    const wsData = [
+      ['bank_name', 'account_number', 'type', 'amount', 'transaction_date', 'description'],
+      ['BCA', '1234567890', 'in', 50000000, getToday(), 'Setoran awal modal'],
+      ['Mandiri', '9876543210', 'out', 25000000, getToday(), 'Pembayaran supplier'],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template Mutasi');
+    XLSX.writeFile(wb, 'template_mutasi_saldo_harian.xlsx');
+    showToast('Template Mutasi Saldo berhasil diunduh');
+  };
+
+  // Download Template List Payment
+  const downloadPaymentTemplate = () => {
+    const wsData = [
+      ['supplier_name', 'amount', 'fr_number', 'job_object', 'status'],
+      ['PT Perkebunan Nusantara IV', 100000000, 'FR-2026-001', 'Sewa kapal tanker', 'proses'],
+      ['PT Sawit Sumbermas Sarana', 50000000, 'FR-2026-002', 'Fee logistik', 'selesai'],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template Payment');
+    XLSX.writeFile(wb, 'template_list_payment.xlsx');
+    showToast('Template List Payment berhasil diunduh');
+  };
+
+  // Import Excel Mutasi - AllOrNothing
+  const handleImportMutasi = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setIsLoading(true);
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        
+        if (!rows.length) {
+          showToast('File Excel kosong', 'error');
+          setIsLoading(false);
+          e.target.value = null;
+          return;
+        }
+
+        // Validation phase - AllOrNothing
+        const validatedData = [];
+        const errors = [];
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const rowNum = i + 2; // Excel row (header is row 1)
+
+          // Find bank account by bank_name and account_number
+          const bank = bankAccounts.find(b => 
+            b.bank_name?.toLowerCase().trim() === String(row.bank_name || '').toLowerCase().trim() &&
+            b.account_number?.trim() === String(row.account_number || '').trim()
+          );
+
+          if (!bank) {
+            errors.push(`Baris ${rowNum}: Rekening "${row.bank_name} - ${row.account_number}" tidak ditemukan`);
+            continue;
+          }
+
+          if (!row.type || !['in', 'out'].includes(String(row.type).toLowerCase())) {
+            errors.push(`Baris ${rowNum}: Type harus "in" atau "out"`);
+            continue;
+          }
+
+          const amount = parseFloat(row.amount || 0);
+          if (isNaN(amount) || amount <= 0) {
+            errors.push(`Baris ${rowNum}: Amount tidak valid`);
+            continue;
+          }
+
+          // Parse date
+          let tglVal = row.transaction_date;
+          if (typeof tglVal === 'number') {
+            tglVal = new Date((tglVal - 25569) * 86400000).toISOString().split('T')[0];
+          } else {
+            tglVal = String(tglVal || '').trim();
+          }
+          if (!tglVal) {
+            errors.push(`Baris ${rowNum}: Tanggal tidak valid`);
+            continue;
+          }
+
+          validatedData.push({
+            bank_account_id: bank.id,
+            type: String(row.type).toLowerCase(),
+            amount: amount,
+            transaction_date: tglVal,
+            description: row.description || ''
+          });
+        }
+
+        // If any errors, abort and show all errors
+        if (errors.length > 0) {
+          showToast(`Import dibatalkan. ${errors.length} error ditemukan:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? '\n...' : ''}`, 'error');
+          setIsLoading(false);
+          e.target.value = null;
+          return;
+        }
+
+        // All valid - proceed with import (AllOrNothing)
+        let successCount = 0;
+        for (const data of validatedData) {
+          try {
+            await onAddBankTransaction(data);
+            successCount++;
+          } catch (err) {
+            // If any insert fails, show error and stop
+            showToast(`Import gagal pada record ${successCount + 1}. Sudah tersimpan: ${successCount} dari ${validatedData.length}`, 'error');
+            setIsLoading(false);
+            e.target.value = null;
+            return;
+          }
+        }
+
+        showToast(`Berhasil mengimpor ${successCount} mutasi saldo!`, 'success');
+      } catch (err) {
+        console.error('Import error:', err);
+        showToast('Gagal membaca file Excel: ' + (err.message || 'Format salah'), 'error');
+      } finally {
+        setIsLoading(false);
+        e.target.value = null;
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Import Excel Payment - AllOrNothing
+  const handleImportPayment = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      setIsLoading(true);
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'binary' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        
+        if (!rows.length) {
+          showToast('File Excel kosong', 'error');
+          setIsLoading(false);
+          e.target.value = null;
+          return;
+        }
+
+        // Validation phase - AllOrNothing
+        const validatedData = [];
+        const errors = [];
+
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
+          const rowNum = i + 2; // Excel row (header is row 1)
+
+          // Find supplier by name
+          const supplier = suppliers.find(s => 
+            s.nama?.toLowerCase().trim() === String(row.supplier_name || '').toLowerCase().trim()
+          );
+
+          if (!supplier) {
+            errors.push(`Baris ${rowNum}: Supplier "${row.supplier_name}" tidak ditemukan`);
+            continue;
+          }
+
+          const amount = parseFloat(String(row.amount || '0').replace(/[^0-9.]/g, ''));
+          if (isNaN(amount) || amount <= 0) {
+            errors.push(`Baris ${rowNum}: Amount tidak valid`);
+            continue;
+          }
+
+          if (row.status && !['proses', 'selesai'].includes(String(row.status).toLowerCase())) {
+            errors.push(`Baris ${rowNum}: Status harus "proses" atau "selesai"`);
+            continue;
+          }
+
+          validatedData.push({
+            supplier_id: supplier.id,
+            amount: amount,
+            fr_number: row.fr_number || '',
+            job_object: row.job_object || '',
+            status: row.status ? String(row.status).toLowerCase() : 'proses'
+          });
+        }
+
+        // If any errors, abort and show all errors
+        if (errors.length > 0) {
+          showToast(`Import dibatalkan. ${errors.length} error ditemukan:\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? '\n...' : ''}`, 'error');
+          setIsLoading(false);
+          e.target.value = null;
+          return;
+        }
+
+        // All valid - proceed with import (AllOrNothing)
+        let successCount = 0;
+        for (const data of validatedData) {
+          try {
+            await onAddPayment(data);
+            successCount++;
+          } catch (err) {
+            // If any insert fails, show error and stop
+            showToast(`Import gagal pada record ${successCount + 1}. Sudah tersimpan: ${successCount} dari ${validatedData.length}`, 'error');
+            setIsLoading(false);
+            e.target.value = null;
+            return;
+          }
+        }
+
+        showToast(`Berhasil mengimpor ${successCount} payment!`, 'success');
+      } catch (err) {
+        console.error('Import error:', err);
+        showToast('Gagal membaca file Excel: ' + (err.message || 'Format salah'), 'error');
+      } finally {
+        setIsLoading(false);
+        e.target.value = null;
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handleTxnSubmit = async (e) => {
@@ -518,16 +746,43 @@ export default function FinanceView({
             <div className="w-full md:w-2/3">
               <div className="flex justify-between items-center bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800 mb-4">
                 <span className="text-xs text-slate-400 font-bold">Log Uang Masuk / Keluar (Mutasi)</span>
-                <button 
-                  onClick={() => { 
-                    setSelectedItem(null); 
-                    setTxnForm({ bank_account_id: selectedBankId || '', type: 'in', amount: '', transaction_date: getToday(), description: '' }); 
-                    setActiveModal('add_txn'); 
-                  }} 
-                  className="flex items-center space-x-1 px-4 py-1.5 rounded-lg bg-teal-500/20 text-teal-400 border border-teal-500/30 text-xs font-bold hover:bg-teal-500/30"
-                >
-                  <Plus className="h-3.5 w-3.5"/><span>Catat Mutasi</span>
-                </button>
+                <div className="flex items-center space-x-2">
+                  {/* Excel Template & Import buttons */}
+                  <button 
+                    onClick={downloadMutasiTemplate}
+                    className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors"
+                    title="Unduh Template Excel Mutasi"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                  <input 
+                    type="file" 
+                    id="import-mutasi-excel" 
+                    className="hidden" 
+                    accept=".xlsx,.xls,.csv" 
+                    onChange={handleImportMutasi}
+                    disabled={isLoading}
+                  />
+                  <button 
+                    onClick={() => document.getElementById('import-mutasi-excel').click()}
+                    disabled={isLoading}
+                    className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-450 hover:text-teal-400 flex items-center space-x-1.5 text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Import Excel Mutasi"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    <span className="hidden md:inline">Import</span>
+                  </button>
+                  <button 
+                    onClick={() => { 
+                      setSelectedItem(null); 
+                      setTxnForm({ bank_account_id: selectedBankId || '', type: 'in', amount: '', transaction_date: getToday(), description: '' }); 
+                      setActiveModal('add_txn'); 
+                    }} 
+                    className="flex items-center space-x-1 px-4 py-1.5 rounded-lg bg-teal-500/20 text-teal-400 border border-teal-500/30 text-xs font-bold hover:bg-teal-500/30"
+                  >
+                    <Plus className="h-3.5 w-3.5"/><span>Catat Mutasi</span>
+                  </button>
+                </div>
               </div>
 
               <GlassCard className="overflow-x-auto">
@@ -596,16 +851,43 @@ export default function FinanceView({
                 <option value="selesai">Selesai (Lunas)</option>
               </select>
             </div>
-            <button 
-              onClick={() => { 
-                setSelectedItem(null); 
-                setPaymentForm({ supplier_id: '', amount: '', fr_number: '', job_object: '', status: 'proses' }); 
-                setActiveModal('add_payment'); 
-              }} 
-              className="flex items-center space-x-1 px-4 py-1.5 rounded-lg bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-bold hover:bg-orange-500/30"
-            >
-              <Plus className="h-3.5 w-3.5"/><span>Buat Tagihan</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {/* Excel Template & Import buttons */}
+              <button 
+                onClick={downloadPaymentTemplate}
+                className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors"
+                title="Unduh Template Excel Payment"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+              <input 
+                type="file" 
+                id="import-payment-excel" 
+                className="hidden" 
+                accept=".xlsx,.xls,.csv" 
+                onChange={handleImportPayment}
+                disabled={isLoading}
+              />
+              <button 
+                onClick={() => document.getElementById('import-payment-excel').click()}
+                disabled={isLoading}
+                className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-450 hover:text-orange-400 flex items-center space-x-1.5 text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Import Excel Payment"
+              >
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                <span className="hidden md:inline">Import</span>
+              </button>
+              <button 
+                onClick={() => { 
+                  setSelectedItem(null); 
+                  setPaymentForm({ supplier_id: '', amount: '', fr_number: '', job_object: '', status: 'proses' }); 
+                  setActiveModal('add_payment'); 
+                }} 
+                className="flex items-center space-x-1 px-4 py-1.5 rounded-lg bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-bold hover:bg-orange-500/30"
+              >
+                <Plus className="h-3.5 w-3.5"/><span>Buat Tagihan</span>
+              </button>
+            </div>
           </div>
 
           <GlassCard className="overflow-x-auto">

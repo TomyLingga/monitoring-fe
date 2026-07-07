@@ -99,16 +99,24 @@ export default function Home() {
 
   // Apply saved theme on mount (client-only)
   useEffect(() => {
-    const savedTheme = localStorage.getItem('cpo_theme');
-    const preferredTheme = savedTheme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-    setTheme(preferredTheme);
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('cpo_theme');
+      const preferredTheme = savedTheme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      setTheme(preferredTheme);
+      // Apply immediately
+      document.documentElement.classList.toggle('dark', preferredTheme === 'dark');
+      document.documentElement.style.colorScheme = preferredTheme;
+    }
   }, []);
 
   // Sync theme class on <html> whenever theme changes
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-    document.documentElement.style.colorScheme = theme;
-    localStorage.setItem('cpo_theme', theme);
+    if (typeof window !== 'undefined') {
+      document.documentElement.classList.remove('light', 'dark');
+      document.documentElement.classList.add(theme);
+      document.documentElement.style.colorScheme = theme;
+      localStorage.setItem('cpo_theme', theme);
+    }
   }, [theme]);
 
   // Fetch data specific to the active tab
@@ -923,7 +931,10 @@ export default function Home() {
     switch (currentTab) {
       case 'dashboard': return 'Dashboard Overview CPO';
       case 'produksi':  return 'Dashboard Produksi';
+      case 'sales':     return 'Dashboard Sales';
       case 'stok':      return 'Dashboard Stok & Inventori';
+      case 'logistik':  return 'Dashboard Logistik';
+      case 'finance':   return 'Dashboard Keuangan';
       case 'master':    return 'Master Data Control Center';
       default: return 'CPO Supply Chain';
     }
@@ -1163,6 +1174,11 @@ export default function Home() {
                 onAddBuyer={handleAddBuyer}
                 onUpdateBuyer={handleUpdateBuyer}
                 onDeleteBuyer={handleDeleteBuyer}
+
+                bankAccounts={bankAccounts}
+                onAddBank={async (p) => { try { const r = await apiCall('/finance/bank-accounts', { method: 'POST', body: JSON.stringify(p) }); setBankAccounts(prev => [r, ...prev]); } catch(e) { console.error(e); } }}
+                onUpdateBank={async (id, p) => { try { const r = await apiCall(`/finance/bank-accounts/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setBankAccounts(prev => prev.map(x => x.id === id ? r : x)); } catch(e) { console.error(e); } }}
+                onDeleteBank={async (id) => { await apiCall(`/finance/bank-accounts/${id}`, { method: 'DELETE' }); setBankAccounts(prev => prev.filter(x => x.id !== id)); }}
               />
             )}
           </div>

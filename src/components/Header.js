@@ -8,13 +8,6 @@ export default function Header({ title, onRefresh, isRefreshing, onToggleTheme, 
     <header className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 pb-6 border-b border-slate-800/80">
       <div>
         <h2 className="text-2xl font-extrabold text-white tracking-tight">{title}</h2>
-        <div className="flex items-center space-x-2 mt-1.5">
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-teal-500"></span>
-          </span>
-          <p className="text-xs text-slate-400">Database connected: PostgreSQL (monitoring)</p>
-        </div>
       </div>
 
       <div className="flex items-center space-x-3 mt-4 md:mt-0">
