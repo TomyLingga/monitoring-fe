@@ -279,9 +279,15 @@ export default function KontrakView({ contracts, suppliers, storages, onAddContr
                     className="w-full px-4 py-2.5 rounded-xl glass-input text-sm bg-slate-900"
                   >
                     <option value="">Pilih Tangki</option>
-                    {storages.filter(s => s.jenis === 'tangki' && s.tipe === 'CPO').map(s => (
-                      <option key={s.id} value={s.id}>{s.nama}</option>
-                    ))}
+                    {storages.filter(s => s.jenis === 'tangki' && (s.tipe === 'CPO' || s.nama.includes('CPO'))).map(s => {
+                      const currentStock = s.stok_produks?.reduce((acc, stok) => acc + parseFloat(stok.qty || 0), 0) || 0;
+                      const remaining = s.kapasitas - currentStock;
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.nama} (Sisa: {remaining.toLocaleString('id-ID')} Kg)
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div>

@@ -105,15 +105,20 @@ export default function Home() {
       setTheme(preferredTheme);
       // Apply immediately
       document.documentElement.classList.toggle('dark', preferredTheme === 'dark');
+      document.documentElement.classList.toggle('light', preferredTheme === 'light');
+      document.body.classList.toggle('dark', preferredTheme === 'dark');
+      document.body.classList.toggle('light', preferredTheme === 'light');
       document.documentElement.style.colorScheme = preferredTheme;
     }
   }, []);
 
-  // Sync theme class on <html> whenever theme changes
+  // Sync theme class on <html> and <body> whenever theme changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
       document.documentElement.classList.remove('light', 'dark');
       document.documentElement.classList.add(theme);
+      document.body.classList.remove('light', 'dark');
+      document.body.classList.add(theme);
       document.documentElement.style.colorScheme = theme;
       localStorage.setItem('cpo_theme', theme);
     }
@@ -125,18 +130,20 @@ export default function Home() {
     setIsRefreshing(true);
     try {
       if (tab === 'dashboard') {
-        const [dash, sups, stores, prods, ctrs, targets] = await Promise.all([
+        const [dash, sups, stores, prods, ctrs, targets, banks] = await Promise.all([
           apiCall(`/dashboard?start_date=${startDate}&end_date=${endDate}`),
           apiCall('/suppliers'),
           apiCall('/storages'),
           apiCall('/master-produks'),
           apiCall('/kontrak-cpos'),
-          apiCall('/daily-targets')
+          apiCall('/daily-targets'),
+          apiCall('/finance/bank-accounts')
         ]);
         setSuppliers(Array.isArray(sups) ? sups : []);
         setProducts(Array.isArray(prods) ? prods : []);
         setContracts(Array.isArray(ctrs) ? ctrs : []);
         setDailyTargets(Array.isArray(targets) ? targets : []);
+        setBankAccounts(Array.isArray(banks) ? banks : []);
         const mergedStorages = (Array.isArray(stores) ? stores : []).map(store => {
           const liveInfo = (dash?.storages || []).find(s => s.id === store.id);
           return { ...store, stok: liveInfo?.stok || [], terisi: liveInfo?.terisi || 0, persentase: liveInfo?.persentase || 0 };
@@ -162,7 +169,7 @@ export default function Home() {
         setProducts(Array.isArray(prods) ? prods : []);
       } 
       else if (tab === 'sales') {
-        const [stores, prods, custs, sCtrs, sShips, sPays, sTargets, levies] = await Promise.all([
+        const [stores, prods, custs, sCtrs, sShips, sPays, sTargets, levies, banks] = await Promise.all([
           apiCall('/storages'),
           apiCall('/master-produks'),
           apiCall('/buyers'),
@@ -170,7 +177,8 @@ export default function Home() {
           apiCall(`/pengiriman-penjualans?start_date=${salesStartDate}&end_date=${salesEndDate}`),
           apiCall('/pembayaran-penjualans'),
           apiCall(`/daily-sales-targets?start_date=${salesStartDate}&end_date=${salesEndDate}`),
-          apiCall('/levy-duties')
+          apiCall('/levy-duties'),
+          apiCall('/finance/bank-accounts')
         ]);
         setStorages(Array.isArray(stores) ? stores : []);
         setProducts(Array.isArray(prods) ? prods : []);
@@ -180,6 +188,7 @@ export default function Home() {
         setPembayaranPenjualans(Array.isArray(sPays) ? sPays : []);
         setDailySalesTargets(Array.isArray(sTargets) ? sTargets : []);
         setLevyDuties(Array.isArray(levies) ? levies : []);
+        setBankAccounts(Array.isArray(banks) ? banks : []);
       } 
       else if (tab === 'stok') {
         const [stores, prods, prodStocks] = await Promise.all([
@@ -984,6 +993,7 @@ export default function Home() {
                 onAddDailyTarget={handleAddDailyTarget}
                 onUpdateDailyTarget={handleUpdateDailyTarget}
                 onDeleteDailyTarget={handleDeleteDailyTarget}
+                bankAccounts={bankAccounts}
               />
             )}
 
@@ -1049,6 +1059,7 @@ export default function Home() {
                 onUpdateLevyDuty={async (id, p) => { const r = await apiCall(`/levy-duties/${id}`, { method: 'PUT', body: JSON.stringify(p) }); setLevyDuties(prev => prev.map(x => x.id === id ? r : x)); await fetchAllData(); }}
                 onDeleteLevyDuty={async (id) => { await apiCall(`/levy-duties/${id}`, { method: 'DELETE' }); setLevyDuties(prev => prev.filter(x => x.id !== id)); await fetchAllData(); }}
                 onBulkAddLevyDuty={async (payloads) => { await apiCall('/levy-duties/bulk', { method: 'POST', body: JSON.stringify({ data: payloads }) }); await fetchAllData(); }}
+                bankAccounts={bankAccounts}
               />
             )}
 

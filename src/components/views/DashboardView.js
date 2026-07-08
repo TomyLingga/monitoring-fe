@@ -49,6 +49,7 @@ export default function DashboardView({
   onAddPayment,
   onUpdatePayment,
   onDeletePayment,
+  bankAccounts = [],
   dailyTargets,
   onAddDailyTarget,
   onUpdateDailyTarget,
@@ -94,7 +95,7 @@ export default function DashboardView({
   
   // Payment Form inside Log Pembayaran Modal
   const [editingPayment, setEditingPayment] = useState(null);
-  const [paymentForm, setPaymentForm] = useState({ nominal: '', tgl_bayar: '', metode_bayar: 'transfer', catatan: '' });
+  const [paymentForm, setPaymentForm] = useState({ nominal: '', tgl_bayar: '', metode_bayar: 'transfer', catatan: '', bank_account_id: '' });
 
   useEffect(() => {
     const existingTarget = (dailyTargets || []).find((item) => item.tgl === targetDate);
@@ -326,6 +327,21 @@ export default function DashboardView({
 
   const handleIncomingSubmit = (e) => {
     e.preventDefault();
+    
+    // Validasi Kapasitas Tangki
+    const storage = storages.find(s => s.id === parseInt(incomingForm.storage_id));
+    if (storage) {
+      const sisa = (storage.kapasitas || 0) - (storage.terisi || 0);
+      const diffQty = activeModal === 'incoming' 
+        ? parseFloat(incomingForm.qty_terima || 0) 
+        : parseFloat(incomingForm.qty_terima || 0) - parseFloat(selectedItem?.qty_terima || 0);
+      
+      if (diffQty > sisa) {
+        showToast(`Gagal: Volume terima melebihi sisa kapasitas tangki (${sisa.toLocaleString('id-ID')} Kg)!`, 'error');
+        return;
+      }
+    }
+
     const contract = contracts.find(c => c.id === parseInt(incomingForm.kontrak_cpo_id));
     if (contract) {
       const qtyKontrak = parseFloat(contract.qty || 0);
@@ -359,7 +375,7 @@ export default function DashboardView({
       onAddPayment(selectedContract.id, paymentForm);
       showToast('Data pembayaran baru berhasil dicatat', 'success');
     }
-    setPaymentForm({ nominal: '', tgl_bayar: todayStr, metode_bayar: 'transfer', catatan: '' });
+    setPaymentForm({ nominal: '', tgl_bayar: todayStr, metode_bayar: 'transfer', catatan: '', bank_account_id: '' });
   };
 
   const openEditContract = (c) => {
@@ -417,7 +433,7 @@ export default function DashboardView({
   const openPaymentsModal = (c) => {
     setSelectedContract(c);
     setEditingPayment(null);
-    setPaymentForm({ nominal: '', tgl_bayar: todayStr, metode_bayar: 'transfer', catatan: '' });
+    setPaymentForm({ nominal: '', tgl_bayar: todayStr, metode_bayar: 'transfer', catatan: '', bank_account_id: '' });
     setActiveModal('payments');
   };
 
@@ -653,6 +669,7 @@ export default function DashboardView({
         let errorCount = 0;
 
         let runSumMap = {};
+        let runStorageMap = {};
 
         sheetData.forEach(row => {
           const contractNo = row.nomor_kontrak || '';
@@ -663,6 +680,18 @@ export default function DashboardView({
 
           if (foundContract && foundTank) {
             const qtyTerima = parseFloat(row.qty_terima || 0);
+
+            // Validasi Kapasitas Tangki
+            if (!runStorageMap[foundTank.id]) {
+              runStorageMap[foundTank.id] = (foundTank.kapasitas || 0) - (foundTank.terisi || 0);
+            }
+            if (qtyTerima > runStorageMap[foundTank.id]) {
+              showToast(`Gagal: Volume terima pada baris excel melebihi sisa kapasitas tangki ${foundTank.nama} (${runStorageMap[foundTank.id].toLocaleString('id-ID')} Kg)!`, 'error');
+              errorCount++;
+              return; // Skip this row
+            }
+            // Update the running available capacity
+            runStorageMap[foundTank.id] -= qtyTerima;
 
             if (!runSumMap[foundContract.id]) {
               runSumMap[foundContract.id] = (foundContract.incoming_cpos || foundContract.incomingCpos || []).reduce((sum, log) => sum + parseFloat(log.qty_terima || 0), 0);
@@ -1515,7 +1544,14 @@ export default function DashboardView({
                     className="w-full px-4 py-2.5 rounded-xl glass-input text-sm bg-slate-900"
                   >
                     <option value="">Pilih Tangki</option>
-                    {storages.filter(s => s.jenis === 'tangki').map(s => <option key={s.id} value={s.id}>{s.nama}</option>)}
+                    {storages.filter(s => s.jenis === 'tangki').map(s => {
+                      const sisa = (s.kapasitas || 0) - (s.terisi || 0);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.nama} (Sisa: {sisa.toLocaleString('id-ID')} Kg)
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
@@ -1591,7 +1627,7 @@ export default function DashboardView({
                 <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3">
                   {editingPayment ? 'Edit Record Pembayaran' : 'Catat Pembayaran Baru'}
                 </h4>
-                <form onSubmit={handlePaymentSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <form onSubmit={handlePaymentSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
                   <div className="md:col-span-1">
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Tanggal</label>
                     <input
@@ -1609,6 +1645,20 @@ export default function DashboardView({
                       onChange={(e) => setPaymentForm({ ...paymentForm, nominal: parseNumberInput(e.target.value) })}
                       className="w-full px-3 py-2 rounded-lg glass-input text-xs"
                     />
+                  </div>
+                  <div className="md:col-span-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Rekening</label>
+                    <select
+                      required
+                      value={paymentForm.bank_account_id}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, bank_account_id: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg glass-input text-xs bg-slate-900"
+                    >
+                      <option value="">Pilih Rekening</option>
+                      {bankAccounts.map(b => (
+                        <option key={b.id} value={b.id}>{b.bank} - {b.account_number}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="md:col-span-1">
                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Catatan</label>

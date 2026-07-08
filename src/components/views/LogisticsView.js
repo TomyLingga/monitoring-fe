@@ -256,7 +256,7 @@ export default function LogisticsView({
 
     let cumulativePE = 0;
     return Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date)).map(d => {
-      cumulativePE += (d.target + d.add - d.use);
+      cumulativePE += (d.add - d.use);
       d.total_available = cumulativePE;
       return d;
     });

@@ -822,7 +822,7 @@ export default function FinanceView({
                         </td>
                         <td className="py-3 px-4 text-center">
                           {t.reference_type ? (
-                            <span className="text-[10px] text-slate-500 px-2 py-0.5 bg-slate-800 rounded">Auto (Sistem)</span>
+                            <span className="text-[10px] text-indigo-400 px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded-full font-medium">Auto (Sistem)</span>
                           ) : (
                             <div className="flex justify-center space-x-2">
                               <button onClick={() => { setSelectedItem(t); setTxnForm({ bank_account_id: t.bank_account_id, type: t.type, amount: t.amount, transaction_date: t.transaction_date.split('T')[0], description: t.description || '' }); setActiveModal('add_txn'); }} className="p-1 text-slate-400 hover:text-sky-400"><Edit className="h-3.5 w-3.5"/></button>

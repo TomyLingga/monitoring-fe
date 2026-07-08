@@ -39,7 +39,8 @@ export default function SalesView({
   onAddLevyDuty,
   onUpdateLevyDuty,
   onDeleteLevyDuty,
-  onBulkAddLevyDuty
+  onBulkAddLevyDuty,
+  bankAccounts = []
 }) {
   const [activeTab, setActiveTab] = useState('contracts'); // 'contracts' | 'shipments' | 'payments' | 'levyduties'
   
@@ -67,6 +68,10 @@ export default function SalesView({
   const [contractFilterStart, setContractFilterStart] = useState(thirtyDaysAgo);
   const [contractFilterEnd, setContractFilterEnd] = useState(todayStr);
 
+  // Payment filters
+  const [paymentFilterStart, setPaymentFilterStart] = useState(thirtyDaysAgo);
+  const [paymentFilterEnd, setPaymentFilterEnd] = useState(todayStr);
+
   // Active modals
   const [activeModal, setActiveModal] = useState(null); // 'add_contract' | 'edit_contract' | 'add_shipment' | 'edit_shipment' | 'add_payment' | 'edit_payment'
   const [selectedItem, setSelectedItem] = useState(null);
@@ -84,11 +89,11 @@ export default function SalesView({
   });
 
   const [paymentForm, setPaymentForm] = useState({
-    kontrak_penjualan_id: '', nominal: '', tgl_bayar: '', catatan: ''
+    kontrak_penjualan_id: '', invoice_id: '', bank_account_id: '', nominal: '', tgl_bayar: '', catatan: ''
   });
 
   const [levyDutyForm, setLevyDutyForm] = useState({
-    invoice_id: '', kapal: '', tarif: '', kurs: '', nilai_akhir: ''
+    invoice_id: '', bank_account_id: '', kapal: '', tarif: '', kurs: '', nilai_akhir: ''
   });
 
   const showToast = (message, type = 'success') => {
@@ -332,6 +337,8 @@ export default function SalesView({
 
     setPaymentForm({
       kontrak_penjualan_id: contractId,
+      invoice_id: '',
+      bank_account_id: '',
       nominal: activeContract ? String(activeContract.outstanding_payment || 0) : '',
       tgl_bayar: new Date().toISOString().split('T')[0],
       catatan: 'Pembayaran angsuran kontrak'
@@ -374,6 +381,33 @@ export default function SalesView({
     });
   };
 
+  const availableInvoices = useMemo(() => {
+    let invoices = [];
+    shipments.forEach(s => {
+      if (s.invoices && s.invoices.length > 0) {
+        s.invoices.forEach(inv => {
+          invoices.push({
+            ...inv,
+            kontrak_penjualan_id: s.kontrak_penjualan_id,
+            nomor_kontrak: s.kontrakPenjualan?.nomor_kontrak
+          });
+        });
+      }
+    });
+    return invoices;
+  }, [shipments]);
+
+  // Filtered contracts — tanggal hanya aktif saat status bukan 'aktif'
+  const filteredContracts = useMemo(() => {
+    return contracts.filter(c => {
+      const useDate = contractFilterStatus !== 'aktif' && contractFilterStatus !== '';
+      const cDate = (c.tgl_kontrak?.split('T')[0] || '');
+      const inRange = useDate ? (cDate >= contractFilterStart && cDate <= contractFilterEnd) : true;
+      const inStatus = contractFilterStatus === '' || c.status === contractFilterStatus;
+      return inRange && inStatus;
+    });
+  }, [contracts, contractFilterStatus, contractFilterStart, contractFilterEnd]);
+
   // Pagination filters
   const paginatedContracts = useMemo(() => {
     const start = (contractPage - 1) * ITEMS_PER_PAGE;
@@ -391,26 +425,22 @@ export default function SalesView({
     });
   }, [shipments, shipFilterStart, shipFilterEnd, shipFilterStatus]);
 
-  // Filtered contracts — tanggal hanya aktif saat status bukan 'aktif'
-  const filteredContracts = useMemo(() => {
-    return contracts.filter(c => {
-      const useDate = contractFilterStatus !== 'aktif' && contractFilterStatus !== '';
-      const cDate = (c.tgl_kontrak?.split('T')[0] || '');
-      const inRange = useDate ? (cDate >= contractFilterStart && cDate <= contractFilterEnd) : true;
-      const inStatus = contractFilterStatus === '' || c.status === contractFilterStatus;
-      return inRange && inStatus;
-    });
-  }, [contracts, contractFilterStatus, contractFilterStart, contractFilterEnd]);
-
   const paginatedShipments = useMemo(() => {
     const start = (shipmentPage - 1) * ITEMS_PER_PAGE;
     return filteredShipments.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredShipments, shipmentPage]);
 
+  const filteredPayments = useMemo(() => {
+    return payments.filter(p => {
+      const pDate = (p.tgl_bayar?.split('T')[0] || p.tgl_bayar || '');
+      return pDate >= paymentFilterStart && pDate <= paymentFilterEnd;
+    });
+  }, [payments, paymentFilterStart, paymentFilterEnd]);
+
   const paginatedPayments = useMemo(() => {
     const start = (paymentPage - 1) * ITEMS_PER_PAGE;
-    return payments.slice(start, start + ITEMS_PER_PAGE);
-  }, [payments, paymentPage]);
+    return filteredPayments.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredPayments, paymentPage]);
 
   const paginatedLevyDuties = useMemo(() => {
     const start = (levyDutyPage - 1) * ITEMS_PER_PAGE;
@@ -1079,16 +1109,17 @@ export default function SalesView({
       {/* Tab: Pembayaran Penjualan */}
       {activeTab === 'payments' && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
+          <div className="flex flex-wrap items-center gap-4 bg-slate-900/60 px-4 py-3 rounded-2xl border border-slate-800">
             <span className="text-xs text-slate-400 font-bold">Penerimaan Pembayaran</span>
-            <div className="ml-auto flex items-center gap-2">
-              <button onClick={downloadPaymentTemplate} className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors">
-                <Download className="h-3.5 w-3.5" /><span>Template Excel</span>
-              </button>
-              <label className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors cursor-pointer">
-                <Upload className="h-3.5 w-3.5" /><span>Import Excel</span>
-                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleImportPayment} className="hidden" />
-              </label>
+            
+            {/* Date Range Filter */}
+            <div className="flex items-center space-x-2">
+              <CustomDateInput value={paymentFilterStart} onChange={setPaymentFilterStart} className="w-32" />
+              <span className="text-slate-500 font-bold text-xs">s/d</span>
+              <CustomDateInput value={paymentFilterEnd} onChange={setPaymentFilterEnd} className="w-32" />
+            </div>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               <button onClick={() => openAddPayment(null)} className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg glass-button-primary text-xs font-bold">
                 <Plus className="h-3.5 w-3.5" /><span>Catat Pembayaran Baru</span>
               </button>
@@ -1127,19 +1158,19 @@ export default function SalesView({
               </table>
             </div>
             {/* Pagination */}
-            {payments.length > ITEMS_PER_PAGE && (
+            {filteredPayments.length > ITEMS_PER_PAGE && (
               <div className="flex items-center justify-between p-4 border-t border-slate-800 text-xs">
-                <span className="text-slate-400 font-bold">Total {payments.length} transaksi</span>
+                <span className="text-slate-400 font-bold">Total {filteredPayments.length} transaksi</span>
                 <div className="flex items-center space-x-2">
                   <button onClick={() => setPaymentPage(p => Math.max(1, p - 1))} disabled={paymentPage === 1} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
-                  <span className="text-white font-bold">Hal {paymentPage} / {Math.ceil(payments.length / ITEMS_PER_PAGE)}</span>
-                  <button onClick={() => setPaymentPage(p => Math.min(Math.ceil(payments.length / ITEMS_PER_PAGE), p + 1))} disabled={paymentPage === Math.ceil(payments.length / ITEMS_PER_PAGE)} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
+                  <span className="text-white font-bold">Hal {paymentPage} / {Math.ceil(filteredPayments.length / ITEMS_PER_PAGE)}</span>
+                  <button onClick={() => setPaymentPage(p => Math.min(Math.ceil(filteredPayments.length / ITEMS_PER_PAGE), p + 1))} disabled={paymentPage === Math.ceil(filteredPayments.length / ITEMS_PER_PAGE)} className="p-1.5 rounded bg-slate-900 border border-slate-800 text-slate-400 disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
             )}
           </GlassCard>
         </div>
-    )}
+      )}
 
       {/* Tab: Pembayaran Levy Duty */}
       {activeTab === 'levyduties' && (
@@ -1400,27 +1431,43 @@ export default function SalesView({
             </div>
             <form onSubmit={handlePaymentSubmit} className="space-y-4 text-left">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pilih Kontrak Penjualan</label>
-                <select value={paymentForm.kontrak_penjualan_id} onChange={e => {
-                  const contractId = e.target.value;
-                  const activeContract = contracts.find(c => String(c.id) === contractId);
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pilih Invoice</label>
+                <select value={paymentForm.invoice_id} onChange={e => {
+                  const invoiceId = e.target.value;
+                  const activeInvoice = availableInvoices.find(inv => String(inv.id) === String(invoiceId));
                   setPaymentForm(prev => ({
                     ...prev,
-                    kontrak_penjualan_id: contractId,
-                    nominal: activeContract ? String(activeContract.outstanding_payment || 0) : ''
+                    invoice_id: invoiceId,
+                    kontrak_penjualan_id: activeInvoice ? activeInvoice.kontrak_penjualan_id : '',
+                    nominal: activeInvoice ? String(activeInvoice.nilai) : ''
                   }));
                 }} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
-                  <option value="">Pilih Kontrak</option>
-                  {contracts.map(c => <option key={c.id} value={c.id}>{c.nomor_kontrak} - {c.buyer?.nama} (Outstanding: {formatRupiah(c.outstanding_payment)})</option>)}
+                  <option value="">Pilih Invoice</option>
+                  {availableInvoices.map(inv => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.nomor_invoice} (Kontrak: {inv.nomor_kontrak}) - {formatRupiah(inv.nilai)}
+                    </option>
+                  ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nominal Diterima (Rp)</label>
-                <input type="number" required placeholder="Contoh: 5000000000" value={paymentForm.nominal} onChange={e => setPaymentForm(prev => ({ ...prev, nominal: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nominal Diterima (Rp)</label>
+                  <input type="number" required placeholder="Contoh: 5000000000" value={paymentForm.nominal} onChange={e => setPaymentForm(prev => ({ ...prev, nominal: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Pembayaran</label>
+                  <input type="date" required value={paymentForm.tgl_bayar} onChange={e => setPaymentForm(prev => ({ ...prev, tgl_bayar: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+                </div>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Pembayaran</label>
-                <input type="date" required value={paymentForm.tgl_bayar} onChange={e => setPaymentForm(prev => ({ ...prev, tgl_bayar: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Rekening Penerima</label>
+                <select required value={paymentForm.bank_account_id} onChange={e => setPaymentForm(prev => ({ ...prev, bank_account_id: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
+                  <option value="">Pilih Rekening</option>
+                  {bankAccounts.map(b => (
+                    <option key={b.id} value={b.id}>{b.bank} - {b.account_number}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Catatan / Keterangan</label>
@@ -1501,6 +1548,15 @@ export default function SalesView({
                   <option value="">Pilih Invoice</option>
                   {shipments.flatMap(s => s.invoices || []).map(inv => (
                     <option key={inv.id} value={inv.id}>{inv.nomor_invoice} (Pengiriman: {inv.pengiriman_penjualan?.kontrak_penjualan?.nomor_kontrak || 'N/A'})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Rekening Pembayar</label>
+                <select required value={levyDutyForm.bank_account_id} onChange={e => setLevyDutyForm(prev => ({ ...prev, bank_account_id: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
+                  <option value="">Pilih Rekening</option>
+                  {bankAccounts.map(b => (
+                    <option key={b.id} value={b.id}>{b.bank} - {b.account_number}</option>
                   ))}
                 </select>
               </div>
