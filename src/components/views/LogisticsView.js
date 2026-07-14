@@ -67,7 +67,7 @@ export default function LogisticsView({
   const [isLoading, setIsLoading] = useState(false);
 
   // Forms
-  const [truckingForm, setTruckingForm] = useState({ no_do: '', qty: '', unit_tersedia: '', transporter: '', tgl: '' });
+  const [truckingForm, setTruckingForm] = useState({ no_do: '', qty: '', unit_tersedia: '', qty_unit: '', transporter: '', destination: '', tgl: '' });
   const [peTargetForm, setPeTargetForm] = useState({ jumlah: '', tgl: '' });
   const [peAddForm, setPeAddForm] = useState({ qty: '', tgl: '', keterangan: '' });
   const [peUseForm, setPeUseForm] = useState({ qty: '', tgl: '', keterangan: '' });
@@ -168,8 +168,8 @@ export default function LogisticsView({
     let name = '';
     if (type === 'trucking') {
       ws = XLSX.utils.aoa_to_sheet([
-        ['no_do', 'qty', 'unit_tersedia', 'transporter', 'tgl'],
-        ['DO-2026-001', 250000, 10, 'PT Logistik Maju', getToday()],
+        ['no_do', 'transporter', 'destination', 'qty_unit', 'qty', 'tgl'],
+        ['DO-2026-001', 'PT Logistik Maju', 'Pelabuhan Tanjung Priok', 3, 250000, getToday()],
       ]);
       name = 'template_trucking';
     } else if (type === 'pe_target') {
@@ -214,8 +214,10 @@ export default function LogisticsView({
             payloads.push({
               no_do: row.no_do || '',
               qty: parseFloat(row.qty || 0),
-              unit_tersedia: parseInt(row.unit_tersedia || 0),
+              qty_unit: parseInt(row.qty_unit || 0),
+              unit_tersedia: parseInt(row.qty_unit || 0),
               transporter: row.transporter || '',
+              destination: row.destination || '',
               tgl: tglVal
             });
           } else if (type === 'pe_target') {
@@ -372,36 +374,81 @@ export default function LogisticsView({
               <label className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 text-xs font-bold hover:text-white cursor-pointer"><Upload className="h-3.5 w-3.5"/><span>Import</span>
                 <input type="file" accept=".xlsx,.xls,.csv" onChange={e => handleImport(e, 'trucking')} className="hidden" />
               </label>
-              <button onClick={() => { setSelectedItem(null); setTruckingForm({ no_do: '', qty: '', unit_tersedia: '', transporter: '', tgl: getToday() }); setActiveModal('add_trucking'); }} className="flex items-center space-x-1 px-4 py-1.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-bold hover:bg-sky-500/30"><Plus className="h-3.5 w-3.5"/><span>Catat Trucking</span></button>
+              <button onClick={() => { setSelectedItem(null); setTruckingForm({ no_do: '', qty: '', unit_tersedia: '', qty_unit: '', transporter: '', destination: '', tgl: getToday() }); setActiveModal('add_trucking'); }} className="flex items-center space-x-1 px-4 py-1.5 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 text-xs font-bold hover:bg-sky-500/30"><Plus className="h-3.5 w-3.5"/><span>Catat Trucking</span></button>
             </div>
           </div>
-          <GlassCard className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase">
-                  <th className="py-3 px-4">Tgl</th>
-                  <th className="py-3 px-4">No DO</th>
-                  <th className="py-3 px-4">Transporter</th>
-                  <th className="py-3 px-4 text-right">Unit Tersedia</th>
-                  <th className="py-3 px-4 text-right">Qty (Kg)</th>
-                  <th className="py-3 px-4 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {truckings.map(t => (
-                  <tr key={t.id} className="hover:bg-slate-900/40">
-                    <td className="py-3 px-4 text-white font-semibold">{formatDateStr(t.tgl)}</td>
-                    <td className="py-3 px-4 font-bold text-sky-400">{t.no_do}</td>
-                    <td className="py-3 px-4 text-slate-300">{t.transporter}</td>
-                    <td className="py-3 px-4 text-right text-white font-bold">{t.unit_tersedia}</td>
-                    <td className="py-3 px-4 text-right text-emerald-400 font-black">{parseFloat(t.qty).toLocaleString('id-ID')}</td>
-                    <td className="py-3 px-4 text-center">
-                      <button onClick={() => triggerDelete('trucking', t)} className="p-1 text-slate-400 hover:text-red-400"><Trash2 className="h-3.5 w-3.5"/></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <GlassCard className="overflow-x-auto" hover={false}>
+            {/* Summary per transporter per day */}
+            {(() => {
+              const dateGroups = {};
+              truckings.forEach(t => {
+                const tgl = t.tgl ? t.tgl.split('T')[0] : 'N/A';
+                if (!dateGroups[tgl]) dateGroups[tgl] = {};
+                const key = t.transporter || 'Unknown';
+                if (!dateGroups[tgl][key]) dateGroups[tgl][key] = { qty_unit: 0, qty: 0, destinations: new Set() };
+                dateGroups[tgl][key].qty_unit += parseInt(t.qty_unit || t.unit_tersedia || 0);
+                dateGroups[tgl][key].qty += parseFloat(t.qty || 0);
+                if (t.destination) dateGroups[tgl][key].destinations.add(t.destination);
+              });
+              const sortedDates = Object.keys(dateGroups).sort().reverse();
+              return sortedDates.map(tgl => {
+                const transporters = dateGroups[tgl];
+                const grandQtyUnit = Object.values(transporters).reduce((s, v) => s + v.qty_unit, 0);
+                const grandQty = Object.values(transporters).reduce((s, v) => s + v.qty, 0);
+                return (
+                  <div key={tgl} className="mb-4">
+                    <div className="flex items-center justify-between px-4 py-2 bg-slate-950/60 border-b border-slate-800">
+                      <span className="text-[10px] font-black text-sky-400 uppercase tracking-wider">{formatDateStr(tgl)}</span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-[10px] text-slate-500">Grand Total:</span>
+                        <span className="text-[10px] font-bold text-white">{grandQtyUnit} Unit</span>
+                        <span className="text-[10px] font-bold text-emerald-400">{grandQty.toLocaleString('id-ID')} Kg</span>
+                      </div>
+                    </div>
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="text-slate-600 text-[9px] uppercase font-bold">
+                          <th className="py-1.5 px-4">Transporter</th>
+                          <th className="py-1.5 px-4">Tujuan / Destination</th>
+                          <th className="py-1.5 px-4 text-right">Qty Unit</th>
+                          <th className="py-1.5 px-4 text-right">Qty Produk (Kg)</th>
+                          <th className="py-1.5 px-4 text-center">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/40">
+                        {truckings.filter(t => (t.tgl ? t.tgl.split('T')[0] : 'N/A') === tgl).map(t => (
+                          <tr key={t.id} className="hover:bg-slate-900/40">
+                            <td className="py-2.5 px-4 text-slate-300 font-semibold">{t.transporter || '-'}</td>
+                            <td className="py-2.5 px-4 text-slate-400">{t.destination || '-'}</td>
+                            <td className="py-2.5 px-4 text-right text-sky-400 font-bold">{t.qty_unit ?? t.unit_tersedia ?? 0}</td>
+                            <td className="py-2.5 px-4 text-right text-emerald-400 font-black">{parseFloat(t.qty).toLocaleString('id-ID')}</td>
+                            <td className="py-2.5 px-4 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button onClick={() => { setSelectedItem(t); setTruckingForm({ no_do: t.no_do || '', qty: t.qty, unit_tersedia: t.unit_tersedia || 0, qty_unit: t.qty_unit || 0, transporter: t.transporter || '', destination: t.destination || '', tgl: t.tgl?.split('T')[0] || getToday() }); setActiveModal('edit_trucking'); }} className="p-1 text-slate-400 hover:text-sky-400"><Edit className="h-3.5 w-3.5"/></button>
+                                <button onClick={() => triggerDelete('trucking', t)} className="p-1 text-slate-400 hover:text-red-400"><Trash2 className="h-3.5 w-3.5"/></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Subtotal row per transporter-date */}
+                        {Object.entries(transporters).map(([name, vals]) => (
+                          <tr key={`sub-${tgl}-${name}`} className="bg-slate-900/40 border-t border-slate-800">
+                            <td className="py-1.5 px-4 text-sky-400 font-black text-[9px] uppercase">Subtotal: {name}</td>
+                            <td className="py-1.5 px-4 text-slate-500 text-[9px]">{Array.from(vals.destinations).join(', ') || '-'}</td>
+                            <td className="py-1.5 px-4 text-right text-sky-400 font-black text-[9px]">{vals.qty_unit} Unit</td>
+                            <td className="py-1.5 px-4 text-right text-emerald-400 font-black text-[9px]">{vals.qty.toLocaleString('id-ID')} Kg</td>
+                            <td></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              });
+            })()}
+            {truckings.length === 0 && (
+              <div className="py-8 text-center text-slate-500 italic text-xs">Belum ada data trucking</div>
+            )}
           </GlassCard>
         </div>
       )}
@@ -513,23 +560,24 @@ export default function LogisticsView({
 
       {/* MODALS */}
       {/* Trucking */}
-      {activeModal === 'add_trucking' && (
+      {(activeModal === 'add_trucking' || activeModal === 'edit_trucking') && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9990]">
           <GlassCard className="w-full max-w-md p-6 border-sky-500/20" hover={false}>
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Catat Trucking</h3>
+              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">{selectedItem ? 'Edit Trucking' : 'Catat Trucking'}</h3>
               <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button>
             </div>
             <form onSubmit={handleTruckingSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">No DO</label><input type="text" required value={truckingForm.no_do} onChange={e => setTruckingForm(prev => ({ ...prev, no_do: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tgl</label><input type="date" required value={truckingForm.tgl} onChange={e => setTruckingForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">No DO</label><input type="text" value={truckingForm.no_do} onChange={e => setTruckingForm(prev => ({ ...prev, no_do: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal</label><input type="date" required value={truckingForm.tgl} onChange={e => setTruckingForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               </div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nama Transporter</label><input type="text" value={truckingForm.transporter} onChange={e => setTruckingForm(prev => ({ ...prev, transporter: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" placeholder="Contoh: PT Logistik Maju" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tujuan / Destination</label><input type="text" value={truckingForm.destination} onChange={e => setTruckingForm(prev => ({ ...prev, destination: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" placeholder="Contoh: Pelabuhan Tanjung Priok" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Qty (Kg)</label><input type="number" required value={truckingForm.qty} onChange={e => setTruckingForm(prev => ({ ...prev, qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
-                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Unit Tersedia</label><input type="number" required value={truckingForm.unit_tersedia} onChange={e => setTruckingForm(prev => ({ ...prev, unit_tersedia: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Qty Unit (Kendaraan)</label><input type="number" value={truckingForm.qty_unit} onChange={e => setTruckingForm(prev => ({ ...prev, qty_unit: e.target.value, unit_tersedia: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" placeholder="Jumlah truk" /></div>
+                <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Qty Produk (Kg)</label><input type="number" required value={truckingForm.qty} onChange={e => setTruckingForm(prev => ({ ...prev, qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" placeholder="Berat dalam Kg" /></div>
               </div>
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Transporter</label><input type="text" value={truckingForm.transporter} onChange={e => setTruckingForm(prev => ({ ...prev, transporter: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               <div className="flex space-x-3 pt-4">
                 <button type="submit" disabled={isLoading} className="flex-1 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-colors disabled:opacity-50">Simpan</button>
                 <button type="button" onClick={() => setActiveModal(null)} disabled={isLoading} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold hover:text-white transition-colors disabled:opacity-50">Batal</button>
@@ -545,7 +593,7 @@ export default function LogisticsView({
           <GlassCard className="w-full max-w-sm p-6 border-blue-500/20" hover={false}>
             <div className="flex justify-between items-center mb-6"><h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Set Target PE</h3><button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
             <form onSubmit={handlePeTargetSubmit} className="space-y-4">
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Jumlah</label><input type="number" required value={peTargetForm.jumlah} onChange={e => setPeTargetForm(prev => ({ ...prev, jumlah: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Jumlah (Kg)</label><input type="number" required value={peTargetForm.jumlah} onChange={e => setPeTargetForm(prev => ({ ...prev, jumlah: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tgl</label><input type="date" required value={peTargetForm.tgl} onChange={e => setPeTargetForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               <div className="flex space-x-3 pt-4"><button type="submit" className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-xs font-bold">Simpan</button><button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold">Batal</button></div>
             </form>
@@ -559,7 +607,7 @@ export default function LogisticsView({
           <GlassCard className="w-full max-w-sm p-6 border-emerald-500/20" hover={false}>
             <div className="flex justify-between items-center mb-6"><h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Catat Tambahan PE</h3><button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
             <form onSubmit={handlePeAddSubmit} className="space-y-4">
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Qty</label><input type="number" required value={peAddForm.qty} onChange={e => setPeAddForm(prev => ({ ...prev, qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Qty (Kg)</label><input type="number" required value={peAddForm.qty} onChange={e => setPeAddForm(prev => ({ ...prev, qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Keterangan</label><input type="text" value={peAddForm.keterangan} onChange={e => setPeAddForm(prev => ({ ...prev, keterangan: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" placeholder="Opsional..." /></div>
               <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tgl</label><input type="date" required value={peAddForm.tgl} onChange={e => setPeAddForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               <div className="flex space-x-3 pt-4"><button type="submit" className="flex-1 py-3 rounded-xl bg-emerald-600 text-white text-xs font-bold">Simpan</button><button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold">Batal</button></div>
@@ -574,7 +622,7 @@ export default function LogisticsView({
           <GlassCard className="w-full max-w-sm p-6 border-rose-500/20" hover={false}>
             <div className="flex justify-between items-center mb-6"><h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Catat Pemakaian PE</h3><button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-white"><X className="h-5 w-5" /></button></div>
             <form onSubmit={handlePeUseSubmit} className="space-y-4">
-              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Qty</label><input type="number" required value={peUseForm.qty} onChange={e => setPeUseForm(prev => ({ ...prev, qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
+              <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Qty (Kg)</label><input type="number" required value={peUseForm.qty} onChange={e => setPeUseForm(prev => ({ ...prev, qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Keterangan</label><input type="text" value={peUseForm.keterangan} onChange={e => setPeUseForm(prev => ({ ...prev, keterangan: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" placeholder="Opsional..." /></div>
               <div><label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tgl</label><input type="date" required value={peUseForm.tgl} onChange={e => setPeUseForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" /></div>
               <div className="flex space-x-3 pt-4"><button type="submit" className="flex-1 py-3 rounded-xl bg-rose-600 text-white text-xs font-bold">Simpan</button><button type="button" onClick={() => setActiveModal(null)} className="flex-1 py-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs font-semibold">Batal</button></div>

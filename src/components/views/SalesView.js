@@ -78,13 +78,13 @@ export default function SalesView({
 
   // Form states
   const [contractForm, setContractForm] = useState({
-    buyer_id: '', produk_id: '', nomor_kontrak: '', qty: '', harga_satuan: '',
-    tgl_kontrak: '', tgl_jatuh_tempo: '', termin_pembayaran: 'CAD', status: 'aktif'
+    buyer_id: '', produk_id: '', nomor_kontrak: '', jenis: 'lokal', mata_uang: 'IDR', incoterm: '',
+    qty: '', harga_satuan: '', tgl_kontrak: '', tgl_jatuh_tempo: '', termin_pembayaran: 'CAD', status: 'aktif'
   });
 
   const [shipmentForm, setShipmentForm] = useState({
     kontrak_penjualan_id: '', qty_kirim: '', qty_terima: '', via: 'Truck Fuso',
-    termin: '', status: 'Selesai', incoterm: 'LOCO', tgl: '', storage_id: '',
+    termin: '', status: 'Selesai', tgl: '', storage_id: '',
     create_invoice: false, nomor_invoice: ''
   });
 
@@ -215,6 +215,7 @@ export default function SalesView({
       buyer_id: buyers[0]?.id ? String(buyers[0].id) : '',
       produk_id: products[0]?.id ? String(products[0].id) : '',
       nomor_kontrak: `SALES-${new Date().getFullYear()}-00${contracts.length + 1}`,
+      jenis: 'lokal', mata_uang: 'IDR', incoterm: '',
       qty: '', harga_satuan: '',
       tgl_kontrak: new Date().toISOString().split('T')[0],
       tgl_jatuh_tempo: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
@@ -229,6 +230,9 @@ export default function SalesView({
       buyer_id: String(c.buyer_id),
       produk_id: String(c.produk_id),
       nomor_kontrak: c.nomor_kontrak,
+      jenis: c.jenis ?? 'lokal',
+      mata_uang: c.mata_uang ?? 'IDR',
+      incoterm: c.incoterm ?? '',
       qty: String(c.qty),
       harga_satuan: String(c.harga_satuan),
       tgl_kontrak: c.tgl_kontrak?.split('T')[0] ?? '',
@@ -276,7 +280,6 @@ export default function SalesView({
       via: 'Truck Fuso',
       termin: activeContract ? activeContract.termin_pembayaran : 'CAD',
       status: 'Selesai',
-      incoterm: 'LOCO',
       tgl: new Date().toISOString().split('T')[0],
       storage_id: '',
       create_invoice: true,
@@ -295,7 +298,6 @@ export default function SalesView({
       via: s.via ?? 'Truck Fuso',
       termin: s.termin ?? '',
       status: s.status ?? 'Selesai',
-      incoterm: s.incoterm ?? 'LOCO',
       tgl: s.tgl?.split('T')[0] ?? '',
       storage_id: s.storage_id ? String(s.storage_id) : '',
       create_invoice: false,
@@ -396,6 +398,27 @@ export default function SalesView({
     });
     return invoices;
   }, [shipments]);
+
+  // Invoices from ekspor-only contracts (for Levy Duty)
+  const eksplorInvoices = useMemo(() => {
+    return availableInvoices.filter(inv => {
+      const contract = contracts.find(c => c.id === inv.kontrak_penjualan_id);
+      return contract?.jenis === 'ekspor';
+    });
+  }, [availableInvoices, contracts]);
+
+  // Proyeksi pendapatan per kontrak aktif
+  const proyeksiData = useMemo(() => {
+    return contracts
+      .filter(c => c.status === 'aktif' && parseFloat(c.outstanding_qty ?? 0) > 0)
+      .map(c => ({
+        ...c,
+        proyeksi: parseFloat(c.proyeksi_pendapatan ?? 0)
+      }))
+      .sort((a, b) => b.proyeksi - a.proyeksi);
+  }, [contracts]);
+
+  const totalProyeksi = useMemo(() => proyeksiData.reduce((sum, c) => sum + c.proyeksi, 0), [proyeksiData]);
 
   // Filtered contracts — tanggal hanya aktif saat status bukan 'aktif'
   const filteredContracts = useMemo(() => {
@@ -906,12 +929,23 @@ export default function SalesView({
                     const outstandingPayment = (c.qty * c.harga_satuan) - c.total_terbayar;
                     return (
                       <tr key={c.id} className="hover:bg-slate-900/40 transition-colors align-middle">
-                        <td className="py-3 px-4 font-bold text-white">{c.nomor_kontrak}</td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-white">{c.nomor_kontrak}</div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border ${
+                              c.jenis === 'ekspor' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            }`}>{c.jenis ?? 'lokal'}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border ${
+                              c.mata_uang === 'USD' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                            }`}>{c.mata_uang ?? 'IDR'}</span>
+                            {c.incoterm && <span className="px-1.5 py-0.5 rounded text-[8px] font-bold border bg-violet-500/10 text-violet-400 border-violet-500/20">{c.incoterm}</span>}
+                          </div>
+                        </td>
                         <td className="py-3 px-4 font-semibold text-slate-300">{c.buyer?.nama ?? 'N/A'}</td>
                         <td className="py-3 px-4 text-teal-400 font-bold">{c.produk?.nama_produk ?? 'N/A'}</td>
                         <td className="py-3 px-4 text-right text-white font-black">{parseFloat(c.qty).toLocaleString('id-ID')} {c.produk?.satuan ?? 'Kg'}</td>
-                        <td className="py-3 px-4 text-right text-slate-300">{formatRupiah(c.harga_satuan)}</td>
-                        <td className="py-3 px-4 text-right text-emerald-400 font-black">{formatRupiah(c.total_nilai_kontrak)}</td>
+                        <td className="py-3 px-4 text-right text-slate-300">{c.mata_uang === 'USD' ? `$${parseFloat(c.harga_satuan).toLocaleString('en-US')}` : formatRupiah(c.harga_satuan)}</td>
+                        <td className="py-3 px-4 text-right text-emerald-400 font-black">{c.mata_uang === 'USD' ? `$${parseFloat(c.total_nilai_kontrak).toLocaleString('en-US')}` : formatRupiah(c.total_nilai_kontrak)}</td>
                         <td className="py-3 px-4 text-right text-sky-400 font-bold">{c.total_terkirim.toLocaleString('id-ID')}</td>
                         <td className="py-3 px-4 text-right font-bold">
                           <span className={outstanding > 0 ? 'text-amber-400' : 'text-slate-500'}>{outstanding.toLocaleString('id-ID')}</span>
@@ -939,7 +973,7 @@ export default function SalesView({
                     );
                   })}
                   {paginatedContracts.length === 0 && (
-                    <tr><td colSpan={10} className="py-8 text-center text-slate-500 italic">Belum ada kontrak penjualan</td></tr>
+                    <tr><td colSpan={12} className="py-8 text-center text-slate-500 italic">Belum ada kontrak penjualan</td></tr>
                   )}
                 </tbody>
               </table>
@@ -955,6 +989,68 @@ export default function SalesView({
                 </div>
               </div>
             )}
+          </GlassCard>
+
+          {/* Proyeksi Pendapatan Penjualan */}
+          <GlassCard hover={false}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <BarChart2 className="h-5 w-5 text-violet-400" />
+                <div>
+                  <h3 className="text-sm font-black text-white">Proyeksi Pendapatan Penjualan</h3>
+                  <p className="text-[10px] text-slate-400">Estimasi pendapatan dari outstanding qty kontrak aktif</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-slate-500 uppercase font-bold">Total Proyeksi</p>
+                <p className="text-lg font-black text-violet-400">{formatRupiah(totalProyeksi)}</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-500 font-bold uppercase tracking-wider">
+                    <th className="py-3 px-4">Nomor Kontrak</th>
+                    <th className="py-3 px-4">Buyer</th>
+                    <th className="py-3 px-4">Produk</th>
+                    <th className="py-3 px-4 text-center">Jenis</th>
+                    <th className="py-3 px-4 text-center">Mata Uang</th>
+                    <th className="py-3 px-4 text-right">Harga Satuan</th>
+                    <th className="py-3 px-4 text-right">Qty Outstanding</th>
+                    <th className="py-3 px-4 text-right text-violet-400">Proyeksi Nilai</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {proyeksiData.map(c => (
+                    <tr key={c.id} className="hover:bg-slate-900/40 transition-colors">
+                      <td className="py-3 px-4 font-bold text-white">{c.nomor_kontrak}</td>
+                      <td className="py-3 px-4 text-slate-300">{c.buyer?.nama ?? 'N/A'}</td>
+                      <td className="py-3 px-4 text-teal-400 font-bold">{c.produk?.nama_produk ?? 'N/A'}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
+                          c.jenis === 'ekspor' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        }`}>{c.jenis ?? 'lokal'}</span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
+                          c.mata_uang === 'USD' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                        }`}>{c.mata_uang ?? 'IDR'}</span>
+                      </td>
+                      <td className="py-3 px-4 text-right text-slate-300">
+                        {c.mata_uang === 'USD' ? `$${parseFloat(c.harga_satuan).toLocaleString('en-US')}` : formatRupiah(c.harga_satuan)}
+                      </td>
+                      <td className="py-3 px-4 text-right text-amber-400 font-bold">{parseFloat(c.outstanding_qty ?? 0).toLocaleString('id-ID')} Kg</td>
+                      <td className="py-3 px-4 text-right font-black text-violet-400">
+                        {c.mata_uang === 'USD' ? `$${parseFloat(c.proyeksi).toLocaleString('en-US')}` : formatRupiah(c.proyeksi)}
+                      </td>
+                    </tr>
+                  ))}
+                  {proyeksiData.length === 0 && (
+                    <tr><td colSpan={8} className="py-8 text-center text-slate-500 italic">Tidak ada outstanding kontrak aktif</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </GlassCard>
         </div>
       )}
@@ -1243,17 +1339,37 @@ export default function SalesView({
       {/* Modal: Kontrak */}
       {(activeModal === 'add_contract' || activeModal === 'edit_contract') && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[9990]">
-          <GlassCard className="w-full max-w-md border-teal-500/20" hover={false}>
-            <div className="flex justify-between items-center mb-6">
+          <GlassCard className="w-full max-w-lg border-teal-500/20 max-h-[90vh] overflow-y-auto" hover={false}>
+            <div className="flex justify-between items-center mb-6 p-6 pb-0">
               <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">{selectedItem ? 'Edit Kontrak Penjualan' : 'Buat Kontrak Penjualan Baru'}</h3>
               <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
             </div>
-            <form onSubmit={handleContractSubmit} className="space-y-4 text-left">
+            <form onSubmit={handleContractSubmit} className="space-y-4 text-left p-6">
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pilih Buyer / Customer</label>
                 <select value={contractForm.buyer_id} onChange={e => setContractForm(prev => ({ ...prev, buyer_id: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
                   {buyers.map(b => <option key={b.id} value={b.id}>{b.nama}</option>)}
                 </select>
+              </div>
+              {/* Jenis & Mata Uang */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Jenis Penjualan</label>
+                  <select value={contractForm.jenis} onChange={e => {
+                    const jenis = e.target.value;
+                    setContractForm(prev => ({ ...prev, jenis, mata_uang: jenis === 'ekspor' ? 'USD' : 'IDR' }));
+                  }} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
+                    <option value="lokal">Lokal (Domestik)</option>
+                    <option value="ekspor">Ekspor (International)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Mata Uang</label>
+                  <select value={contractForm.mata_uang} onChange={e => setContractForm(prev => ({ ...prev, mata_uang: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
+                    <option value="IDR">IDR (Rupiah)</option>
+                    <option value="USD">USD (Dollar)</option>
+                  </select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1273,10 +1389,35 @@ export default function SalesView({
                   <input type="number" required placeholder="Kg / Box" value={contractForm.qty} onChange={e => setContractForm(prev => ({ ...prev, qty: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Harga Satuan (Rp / unit)</label>
-                  <input type="number" required placeholder="Contoh: 16500" value={contractForm.harga_satuan} onChange={e => setContractForm(prev => ({ ...prev, harga_satuan: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Harga Satuan ({contractForm.mata_uang === 'USD' ? 'USD' : 'Rp'})</label>
+                  <input type="number" required placeholder={contractForm.mata_uang === 'USD' ? 'Contoh: 850' : 'Contoh: 16500'} value={contractForm.harga_satuan} onChange={e => setContractForm(prev => ({ ...prev, harga_satuan: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
                 </div>
               </div>
+              {/* INCOTERM — hanya untuk ekspor */}
+              {contractForm.jenis === 'ekspor' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">INCOTERM</label>
+                  <select value={contractForm.incoterm} onChange={e => setContractForm(prev => ({ ...prev, incoterm: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
+                    <option value="">Pilih INCOTERM...</option>
+                    <option value="FOB">FOB – Free On Board</option>
+                    <option value="CIF">CIF – Cost Insurance & Freight</option>
+                    <option value="CFR">CFR – Cost and Freight</option>
+                    <option value="EXW">EXW – Ex Works</option>
+                    <option value="DDP">DDP – Delivered Duty Paid</option>
+                    <option value="DAP">DAP – Delivered At Place</option>
+                  </select>
+                </div>
+              )}
+              {contractForm.jenis === 'lokal' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">INCOTERM Lokal</label>
+                  <select value={contractForm.incoterm} onChange={e => setContractForm(prev => ({ ...prev, incoterm: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
+                    <option value="">Pilih INCOTERM...</option>
+                    <option value="LOCO">LOCO (Pembeli Ambil Sendiri)</option>
+                    <option value="FRANCO">FRANCO (Penjual Kirim ke Gudang)</option>
+                  </select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Kontrak</label>
@@ -1368,18 +1509,9 @@ export default function SalesView({
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Incoterm</label>
-                  <select value={shipmentForm.incoterm} onChange={e => setShipmentForm(prev => ({ ...prev, incoterm: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white">
-                    <option value="LOCO">LOCO (Pembeli Ambil Sendiri)</option>
-                    <option value="FRANCO">FRANCO (Penjual Kirim ke Gudang)</option>
-                  </select>
-                </div>
-                <div>
+              <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Pengiriman</label>
                   <input type="date" required value={shipmentForm.tgl} onChange={e => setShipmentForm(prev => ({ ...prev, tgl: e.target.value }))} className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white" />
-                </div>
               </div>
               <div className="grid grid-cols-1 gap-4">
                 <div>
@@ -1411,6 +1543,17 @@ export default function SalesView({
                   )}
                 </div>
               )}
+
+              {/* Show INCOTERM read-only from contract */}
+              {(() => {
+                const activeContract = contracts.find(c => String(c.id) === String(shipmentForm.kontrak_penjualan_id));
+                return activeContract?.incoterm ? (
+                  <div className="bg-slate-950/40 px-3 py-2 rounded-xl border border-slate-900 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">INCOTERM dari Kontrak</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-violet-500/10 text-violet-400 border border-violet-500/20">{activeContract.incoterm}</span>
+                  </div>
+                ) : null;
+              })()}
 
               <div className="flex space-x-3 pt-4">
                 <button type="submit" className="flex-1 py-3 rounded-xl glass-button-primary text-xs font-bold">Simpan Pengiriman</button>
@@ -1545,9 +1688,9 @@ export default function SalesView({
                   onChange={e => setLevyDutyForm(prev => ({ ...prev, invoice_id: e.target.value }))} 
                   className="w-full px-4 py-2.5 rounded-xl glass-input text-xs bg-slate-900 text-white"
                 >
-                  <option value="">Pilih Invoice</option>
-                  {shipments.flatMap(s => s.invoices || []).map(inv => (
-                    <option key={inv.id} value={inv.id}>{inv.nomor_invoice} (Pengiriman: {inv.pengiriman_penjualan?.kontrak_penjualan?.nomor_kontrak || 'N/A'})</option>
+                  <option value="">Pilih Invoice (Kontrak Ekspor)</option>
+                  {eksplorInvoices.map(inv => (
+                    <option key={inv.id} value={inv.id}>{inv.nomor_invoice} (Kontrak: {inv.nomor_kontrak})</option>
                   ))}
                 </select>
               </div>
